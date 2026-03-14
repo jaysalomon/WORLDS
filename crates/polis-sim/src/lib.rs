@@ -59,9 +59,15 @@ pub struct TickMetrics {
     pub average_animal_familiarity: u64,
     pub average_animal_fear: u64,
     pub average_animal_tolerance: u64,
+    // Phase 5: Collective agency metrics
+    pub total_collectives: u64,
+    pub total_collective_members: u64,
+    pub average_collective_size: u64,
+    pub average_collective_legitimacy: u64,
+    pub average_collective_factionalism: u64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SimEvent {
     TickStarted {
         tick: u64,
@@ -102,6 +108,24 @@ pub enum SimEvent {
         partition_id: u64,
         contact_type: HumanAnimalContactType,
         outcome: HumanAnimalOutcome,
+    },
+    // Phase 5: Collective agency events
+    CollectiveLifecycleTransition {
+        tick: u64,
+        collective_id: u64,
+        old_state: String,
+        new_state: String,
+    },
+    CollectiveMerged {
+        tick: u64,
+        primary_id: u64,
+        secondary_id: u64,
+        merged_id: u64,
+    },
+    CollectiveSplit {
+        tick: u64,
+        original_id: u64,
+        new_id: u64,
     },
 }
 
@@ -202,7 +226,7 @@ pub enum SimError {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationCheckpoint {
     pub seed: SimulationSeed,
     pub state: SimState,
@@ -351,7 +375,7 @@ impl Simulation {
 
     pub fn step_with_mode(&mut self, mode: ExecutionMode) {
         use polis_systems::{
-            agent_commit_phase, agent_decision_phase, agent_perception_phase, cleanup_dead_agents,
+            agent_commit_phase, agent_decision_phase, agent_perception_phase,
             cross_species_interaction_phase, social_interaction_phase,
         };
 
@@ -525,9 +549,50 @@ impl Simulation {
             });
         }
 
-        // Cleanup dead agents periodically (every 100 ticks)
-        if self.state.tick % 100 == 0 {
-            cleanup_dead_agents(&mut self.agents);
+        // Phase 5: Collective lifecycle phase
+        // Process collective lifecycle, merge/split detection, downward causation
+        let mut collective_registry = std::mem::take(&mut self.agents.collective_registry);
+        let collective_events = polis_systems::collective_lifecycle_phase(
+            self.agents.agents_mut(),
+            &mut collective_registry,
+            self.state.tick,
+            self.seed.0,
+        );
+        self.agents.collective_registry = collective_registry;
+
+        // Convert and add collective events
+        for event in collective_events {
+            let sim_event = match event {
+                polis_systems::CollectiveEvent::LifecycleTransition {
+                    collective_id,
+                    old_state,
+                    new_state,
+                } => SimEvent::CollectiveLifecycleTransition {
+                    tick: self.state.tick,
+                    collective_id,
+                    old_state,
+                    new_state,
+                },
+                polis_systems::CollectiveEvent::Merged {
+                    primary_id,
+                    secondary_id,
+                    merged_id,
+                } => SimEvent::CollectiveMerged {
+                    tick: self.state.tick,
+                    primary_id,
+                    secondary_id,
+                    merged_id,
+                },
+                polis_systems::CollectiveEvent::Split {
+                    original_id,
+                    new_id,
+                } => SimEvent::CollectiveSplit {
+                    tick: self.state.tick,
+                    original_id,
+                    new_id,
+                },
+            };
+            self.events.push(sim_event);
         }
 
         self.state.state_hash = step_hash(
@@ -696,11 +761,12 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
     let social_tension: u64 = world
         .partitions()
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(partition_index, _)| {
             let agents_in_partition: Vec<_> = agents
                 .agents()
                 .iter()
-                .filter(|a| a.is_alive && a.partition_id == p as *const _ as u64)
+                .filter(|a| a.is_alive && a.partition_id == partition_index as u64)
                 .map(|a| a.id)
                 .collect();
             agents
@@ -708,6 +774,9 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
                 .partition_tension(&agents_in_partition) as u64
         })
         .sum();
+
+    // Phase 5: Collective metrics
+    let collective_stats = agents.collective_statistics();
 
     TickMetrics {
         tick: world.tick(),
@@ -735,6 +804,12 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
         average_animal_familiarity: total_animal_familiarity / partition_count,
         average_animal_fear: total_animal_fear / partition_count,
         average_animal_tolerance: total_animal_tolerance / partition_count,
+        // Phase 5 collective metrics
+        total_collectives: collective_stats.total_collectives,
+        total_collective_members: collective_stats.total_members,
+        average_collective_size: collective_stats.average_size,
+        average_collective_legitimacy: collective_stats.average_legitimacy as u64,
+        average_collective_factionalism: collective_stats.average_factionalism as u64,
     }
 }
 

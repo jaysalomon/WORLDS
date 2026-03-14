@@ -1,6 +1,6 @@
 # POLIS Event Schema Specification
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Date:** 14 March 2026  
 **Document:** Schema specification for POLIS simulation events  
 **Purpose:** Define the formal schema for events emitted during simulation runs, including event types, fields, and export formats.
@@ -238,7 +238,64 @@ pub enum HumanAnimalOutcome {
 {"event_type":"HumanAnimalContact","tick":100,"sequence":15,"timestamp":100,"payload":{"tick":100,"partition_id":12,"contact_type":"Feeding","outcome":"Positive"}}
 ```
 
-### 2.4 Event Types (Future)
+### 2.4 Event Types (Phase 5 - Collective Agency)
+
+The following event types are defined in **Phase 5** for collective actor lifecycle and structure transitions:
+
+#### `CollectiveLifecycleTransition`
+
+Records a collective actor lifecycle state transition.
+
+```rust
+pub struct CollectiveLifecycleTransition {
+    pub tick: u64,
+    pub collective_id: u64,
+    pub old_state: String,
+    pub new_state: String,
+}
+```
+
+**JSONL Example:**
+```json
+{"event_type":"CollectiveLifecycleTransition","tick":240,"sequence":7,"timestamp":240,"payload":{"tick":240,"collective_id":12,"old_state":"CollectiveActorUnstable","new_state":"CollectiveActorStabilized"}}
+```
+
+#### `CollectiveMerged`
+
+Records a merge between two collectives into one merged actor.
+
+```rust
+pub struct CollectiveMerged {
+    pub tick: u64,
+    pub primary_id: u64,
+    pub secondary_id: u64,
+    pub merged_id: u64,
+}
+```
+
+**JSONL Example:**
+```json
+{"event_type":"CollectiveMerged","tick":320,"sequence":4,"timestamp":320,"payload":{"tick":320,"primary_id":4,"secondary_id":9,"merged_id":4}}
+```
+
+#### `CollectiveSplit`
+
+Records a split where part of a collective forms a new collective.
+
+```rust
+pub struct CollectiveSplit {
+    pub tick: u64,
+    pub original_id: u64,
+    pub new_id: u64,
+}
+```
+
+**JSONL Example:**
+```json
+{"event_type":"CollectiveSplit","tick":412,"sequence":9,"timestamp":412,"payload":{"tick":412,"original_id":7,"new_id":15}}
+```
+
+### 2.5 Event Types (Future)
 
 The following event types are planned for future phases:
 
@@ -359,9 +416,9 @@ Total Events = T × (1 + P + 1) = T × (P + 2)
 
 **Phase 0:** 3 phases per tick → 5 events per tick (minimum)
 
-**Phase 4:** Additional social/cross-species events variable per tick based on agent interactions
+**Phase 4-5:** Additional social/cross-species/collective events variable per tick based on interactions and lifecycle transitions
 
-| Ticks | Phase 0 Events | Phase 4 Events (typical) | JSONL Size (est.) |
+| Ticks | Phase 0 Events | Phase 4-5 Events (typical) | JSONL Size (est.) |
 |-------|---------------|--------------------------|-------------------|
 | 100 | 500 | 500-2,000 | ~25-100 KB |
 | 1,000 | 5,000 | 5,000-20,000 | ~250 KB-1 MB |
@@ -422,7 +479,7 @@ Exported events validate against JSON Schema:
   "properties": {
     "event_type": {
       "type": "string",
-      "enum": ["TickStarted", "PhaseApplied", "TickCompleted", "TrustShifted", "CooperationOccurred", "ConflictOccurred", "HumanAnimalContact"]
+      "enum": ["TickStarted", "PhaseApplied", "TickCompleted", "TrustShifted", "CooperationOccurred", "ConflictOccurred", "HumanAnimalContact", "CollectiveLifecycleTransition", "CollectiveMerged", "CollectiveSplit"]
     },
     "tick": { "type": "integer", "minimum": 0 },
     "sequence": { "type": "integer", "minimum": 0 },
@@ -521,7 +578,10 @@ The run manifest references the event file:
       "TrustShifted": 50000,
       "CooperationOccurred": 30000,
       "ConflictOccurred": 20000,
-      "HumanAnimalContact": 15000
+      "HumanAnimalContact": 15000,
+      "CollectiveLifecycleTransition": 5000,
+      "CollectiveMerged": 400,
+      "CollectiveSplit": 550
     }
   }
 }
@@ -543,6 +603,18 @@ metrics = pd.read_csv("metrics.csv")
 # Join on tick
 combined = events.merge(metrics, on="tick", how="outer")
 ```
+
+Phase 5 correlation fields commonly used with collective events:
+- `total_collectives`
+- `total_collective_members`
+- `average_collective_size`
+- `average_collective_legitimacy`
+- `average_collective_factionalism`
+
+Typical analysis pattern:
+- `CollectiveLifecycleTransition` frequency vs `average_collective_legitimacy`
+- merge/split rates vs `average_collective_factionalism`
+- collective membership growth vs `social_tension`
 
 ### 6.3 Visualization
 
@@ -585,7 +657,7 @@ Event schema version is embedded in export metadata:
 
 ```json
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.3.0",
   "event_count": 5000000,
   "events": [...]
 }
@@ -603,10 +675,11 @@ Event schema version is embedded in export metadata:
 |---------|------|---------|
 | 0.1.0 | 2026-03-14 | Initial schema - TickStarted, PhaseApplied, TickCompleted |
 | 0.2.0 | 2026-03-14 | Added Phase 4 social fabric events (TrustShifted, CooperationOccurred, ConflictOccurred, HumanAnimalContact) |
-| 0.3.0 | TBD | Added AgentSpawned, AgentDied, ResourceDiscovered |
-| 0.4.0 | TBD | Added TradeOccurred, ConflictStarted |
-| 0.5.0 | TBD | Added TechnologyDiscovered, SettlementFounded |
-| 0.6.0 | TBD | Add biology interaction events (PredationEncountered, DomesticationShift) |
+| 0.3.0 | 2026-03-14 | Added Phase 5 collective events (CollectiveLifecycleTransition, CollectiveMerged, CollectiveSplit) |
+| 0.4.0 | TBD | Added AgentSpawned, AgentDied, ResourceDiscovered |
+| 0.5.0 | TBD | Added TradeOccurred, ConflictStarted |
+| 0.6.0 | TBD | Added TechnologyDiscovered, SettlementFounded |
+| 0.7.0 | TBD | Add biology interaction events (PredationEncountered, DomesticationShift) |
 
 ## 9. References
 
@@ -661,6 +734,24 @@ pub enum SimEvent {
         partition_id: u64,
         contact_type: HumanAnimalContactType,
         outcome: HumanAnimalOutcome,
+    },
+    // Phase 5: Collective agency events
+    CollectiveLifecycleTransition {
+        tick: u64,
+        collective_id: u64,
+        old_state: String,
+        new_state: String,
+    },
+    CollectiveMerged {
+        tick: u64,
+        primary_id: u64,
+        secondary_id: u64,
+        merged_id: u64,
+    },
+    CollectiveSplit {
+        tick: u64,
+        original_id: u64,
+        new_id: u64,
     },
 }
 
@@ -718,6 +809,9 @@ impl SimEvent {
             SimEvent::CooperationOccurred { tick, .. } => *tick,
             SimEvent::ConflictOccurred { tick, .. } => *tick,
             SimEvent::HumanAnimalContact { tick, .. } => *tick,
+            SimEvent::CollectiveLifecycleTransition { tick, .. } => *tick,
+            SimEvent::CollectiveMerged { tick, .. } => *tick,
+            SimEvent::CollectiveSplit { tick, .. } => *tick,
         }
     }
 
@@ -731,6 +825,9 @@ impl SimEvent {
             SimEvent::CooperationOccurred { .. } => "CooperationOccurred",
             SimEvent::ConflictOccurred { .. } => "ConflictOccurred",
             SimEvent::HumanAnimalContact { .. } => "HumanAnimalContact",
+            SimEvent::CollectiveLifecycleTransition { .. } => "CollectiveLifecycleTransition",
+            SimEvent::CollectiveMerged { .. } => "CollectiveMerged",
+            SimEvent::CollectiveSplit { .. } => "CollectiveSplit",
         }
     }
 }

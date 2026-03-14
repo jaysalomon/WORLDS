@@ -8,8 +8,10 @@
 //! - Explicit command path from UI to backend
 
 use macroquad::prelude::*;
+use polis_agents::AgentId;
 use polis_sim::{ExecutionMode, Simulation};
 use polis_world::PartitionState;
+use std::collections::HashMap;
 
 pub struct FrontendModule;
 
@@ -65,6 +67,7 @@ pub enum OverlayType {
     Demand,        // Show population demand
     SocialTension, // Phase 4: Show conflict/trust levels
     CrossSpecies,  // Phase 4: Show animal fear/tolerance
+    Collectives,   // Phase 5: Show collective actor footprint and quality
     None,
 }
 
@@ -156,6 +159,12 @@ impl PresentationShell {
         let start_y = (screen_height() - grid_height) / 2.0 + 20.0;
 
         // Draw grid cells
+        let collective_overlay_scores = if self.overlay == OverlayType::Collectives {
+            Some(self.compute_collective_overlay_scores(partition_count))
+        } else {
+            None
+        };
+
         for (idx, partition) in partitions.iter().enumerate() {
             let col = idx % cols;
             let row = idx / cols;
@@ -164,7 +173,11 @@ impl PresentationShell {
             let y = start_y + row as f32 * cell_size;
 
             let is_selected = self.selected_partition == Some(idx);
-            let color = self.partition_color(partition);
+            let collective_score = collective_overlay_scores
+                .as_ref()
+                .and_then(|scores| scores.get(idx))
+                .copied();
+            let color = self.partition_color(partition, collective_score);
 
             // Draw cell background
             draw_rectangle(x, y, cell_size - 2.0, cell_size - 2.0, color);
@@ -213,7 +226,7 @@ impl PresentationShell {
     }
 
     /// Get color for a partition based on current overlay
-    fn partition_color(&self, partition: &PartitionState) -> Color {
+    fn partition_color(&self, partition: &PartitionState, collective_score: Option<f32>) -> Color {
         match self.overlay {
             OverlayType::Resources => {
                 // Color based on total resources (food + water weighted)
@@ -257,8 +270,63 @@ impl PresentationShell {
                 // Green for high tolerance (approaching domestication), red for fear
                 Color::new(1.0 - tolerance, tolerance, 0.2, 1.0)
             }
+            OverlayType::Collectives => {
+                // Phase 5: density/quality proxy built from collective membership,
+                // legitimacy, and factionalism in this partition.
+                let score = collective_score.unwrap_or(0.0).clamp(0.0, 1.0);
+                Color::new(1.0 - score, 0.2 + score * 0.7, 0.25, 1.0)
+            }
             OverlayType::None => Color::new(0.3, 0.3, 0.4, 1.0),
         }
+    }
+
+    /// Compute a per-partition collective overlay score in [0, 1].
+    /// High scores indicate dense membership + high legitimacy + low factionalism.
+    fn compute_collective_overlay_scores(&self, partition_count: usize) -> Vec<f32> {
+        let mut member_counts = vec![0_u32; partition_count];
+        let mut legitimacy_sum = vec![0_u32; partition_count];
+        let mut factionalism_sum = vec![0_u32; partition_count];
+
+        let mut agent_partitions: HashMap<AgentId, u64> = HashMap::new();
+        for agent in self.simulation.agents().agents() {
+            if agent.is_alive {
+                agent_partitions.insert(agent.id, agent.partition_id);
+            }
+        }
+
+        for collective in self
+            .simulation
+            .agents()
+            .collective_registry
+            .active_collectives()
+        {
+            let legitimacy = collective.legitimacy as u32;
+            let factionalism = collective.factionalism as u32;
+            for agent_id in collective.members.keys() {
+                if let Some(&partition_id) = agent_partitions.get(agent_id) {
+                    let idx = partition_id as usize;
+                    if idx < partition_count {
+                        member_counts[idx] = member_counts[idx].saturating_add(1);
+                        legitimacy_sum[idx] = legitimacy_sum[idx].saturating_add(legitimacy);
+                        factionalism_sum[idx] = factionalism_sum[idx].saturating_add(factionalism);
+                    }
+                }
+            }
+        }
+
+        member_counts
+            .iter()
+            .enumerate()
+            .map(|(idx, &count)| {
+                if count == 0 {
+                    return 0.0;
+                }
+                let avg_legitimacy = legitimacy_sum[idx] as f32 / count as f32 / 100.0;
+                let avg_factionalism = factionalism_sum[idx] as f32 / count as f32 / 100.0;
+                let density = (count as f32 / 20.0).min(1.0);
+                (0.5 * density + 0.5 * (avg_legitimacy * (1.0 - avg_factionalism))).clamp(0.0, 1.0)
+            })
+            .collect()
     }
 
     /// Draw tooltip for hovered partition
@@ -410,6 +478,7 @@ impl PresentationShell {
             OverlayType::Demand => "Demand",
             OverlayType::SocialTension => "Social",
             OverlayType::CrossSpecies => "Animals",
+            OverlayType::Collectives => "Collectives",
             OverlayType::None => "None",
         };
         draw_text(
@@ -423,7 +492,7 @@ impl PresentationShell {
         // Controls help
         let help_y = screen_height() - 80.0;
         draw_text(
-            "Controls: SPACE=Pause | S=Step | 1/2/3/4=Speed | R/F/D/T/A=Overlay | Click=Select",
+            "Controls: SPACE=Pause | S=Step | 1/2/3/4=Speed | R/F/D/T/A/C=Overlay | Click=Select",
             10.0,
             help_y,
             14.0,
@@ -679,6 +748,10 @@ impl PresentationShell {
         if is_key_pressed(KeyCode::A) {
             // Phase 4: Cross-species overlay
             commands.push(SimCommand::ToggleOverlay(OverlayType::CrossSpecies));
+        }
+        if is_key_pressed(KeyCode::C) {
+            // Phase 5: Collective actor overlay
+            commands.push(SimCommand::ToggleOverlay(OverlayType::Collectives));
         }
         if is_key_pressed(KeyCode::N) {
             commands.push(SimCommand::ToggleOverlay(OverlayType::None));

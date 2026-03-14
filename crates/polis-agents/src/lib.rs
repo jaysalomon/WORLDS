@@ -1,4 +1,4 @@
-//! Individual agents for POLIS Phase 3-4
+//! Individual agents for POLIS Phase 3-5
 //!
 //! This module implements individuals with:
 //! - Basic needs (food, water)
@@ -7,10 +7,12 @@
 //! - Mortality and reproduction
 //! - Social ties and trust/grievance (Phase 4)
 //! - Cross-species interaction primitives (Phase 4)
+//! - Collective agency and group formation (Phase 5)
 
 use polis_core::DeterministicRng;
 use serde::{Deserialize, Serialize};
 
+pub mod collective;
 pub mod social;
 
 pub struct AgentsModule;
@@ -216,12 +218,14 @@ impl Individual {
 }
 
 /// Collection of all agents in the simulation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPopulation {
     next_id: AgentId,
     agents: Vec<Individual>,
     /// Social network for Phase 4
     pub social_network: social::SocialNetwork,
+    /// Collective actors registry for Phase 5
+    pub collective_registry: collective::CollectiveRegistry,
 }
 
 impl AgentPopulation {
@@ -230,6 +234,7 @@ impl AgentPopulation {
             next_id: AgentId(0),
             agents: Vec::new(),
             social_network: social::SocialNetwork::new(),
+            collective_registry: collective::CollectiveRegistry::new(),
         }
     }
 
@@ -349,6 +354,14 @@ impl AgentPopulation {
         h = mix64(h ^ (stats.average_grievance as u64).rotate_left(23));
         h = mix64(h ^ stats.total_cooperation.rotate_left(27));
         h = mix64(h ^ stats.total_conflict.rotate_left(31));
+
+        // Include collective registry in digest
+        let coll_stats = self.collective_registry.statistics();
+        h = mix64(h ^ coll_stats.total_collectives.rotate_left(35));
+        h = mix64(h ^ coll_stats.total_members.rotate_left(39));
+        h = mix64(h ^ (coll_stats.average_legitimacy as u64).rotate_left(43));
+        h = mix64(h ^ (coll_stats.average_factionalism as u64).rotate_left(47));
+
         h
     }
 
@@ -356,12 +369,27 @@ impl AgentPopulation {
     pub fn social_statistics(&self) -> social::SocialNetworkStatistics {
         self.social_network.statistics()
     }
+
+    /// Get collective registry statistics
+    pub fn collective_statistics(&self) -> collective::CollectiveStatistics {
+        self.collective_registry.statistics()
+    }
 }
 
 impl Default for AgentPopulation {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Statistics about collectives in the population
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct CollectivePopulationStatistics {
+    pub total_collectives: u64,
+    pub total_collective_members: u64,
+    pub average_collective_size: u64,
+    pub average_legitimacy: u8,
+    pub average_factionalism: u8,
 }
 
 fn mix64(mut x: u64) -> u64 {

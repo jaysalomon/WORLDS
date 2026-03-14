@@ -1,7 +1,7 @@
 # POLIS Build Tracking
 
 Last updated: **2026-03-14**
-Current status: **Phase 4 Complete** - Ready for Phase 5: Collective Agency
+Current status: **Phase 5 Complete** - Collective agency close-out complete, ready for Phase 6
 
 ## Dashboard
 
@@ -12,6 +12,7 @@ Current status: **Phase 4 Complete** - Ready for Phase 5: Collective Agency
 | Phase 2 - Presentation Shell | Done | Windowed shell and read-only state contract validated |
 | Phase 3 - Individuals and Demography | Done | Agents with needs, movement, consumption, mortality, reproduction |
 | Phase 4 - Social Fabric | Done | Social ties, cooperation/conflict, cross-species primitives, frontend overlays complete |
+| Phase 5 - Collective Agency | Done | Core collective actors + frontend collective overlay + event/metrics doc sync |
 | Phase 7 - Reproducibility Audit | Partial | Helpers exist; full completion pending |
 
 ## Maintenance Protocol
@@ -180,6 +181,41 @@ Current status: **Phase 4 Complete** - Ready for Phase 5: Collective Agency
 
 ---
 
+### Phase 5 - Collective Agency
+
+#### Completed
+
+- [x] Collective actor types: CoordinationCluster, StableGroup, CollectiveActor, HouseholdActor, OrganizationActor
+- [x] Group life-cycle states: ephemeral → proto-group → unstable → stabilized → fragmenting → dissolved
+- [x] Promotion criteria based on 03_CollectiveAgency.md section 6.1:
+  - boundary clarity, membership rules, shared resources, decision procedure, external capacity
+- [x] Internal structure: membership, roles, influence weights, pooled assets, legitimacy, factionalism
+- [x] Constitution (decision procedures): MajorityVote, WeightedCouncil, Consensus, CommandHierarchy, PatriarchalDominance, OligarchicDominance
+- [x] Merge/split rules with hysteresis to prevent thrashing
+- [x] Downward causation through constraints/incentives (NOT direct overwriting of individual beliefs/preferences)
+- [x] Collective events: CollectiveLifecycleTransition, CollectiveMerged, CollectiveSplit
+- [x] Collective metrics: total_collectives, total_collective_members, average_collective_size, average_collective_legitimacy, average_collective_factionalism
+- [x] Integration with simulation step and metrics collection
+- [x] Determinism parity maintained
+- [x] Frontend collective overlay visualization
+- [x] Documentation sync for Phase 5 events and metrics (`docs/EventSchema.md`)
+- [x] Review fix: removed periodic hard cleanup of dead agents from sim loop (carry-forward corpse lifecycle in Phase 6)
+- [x] Review fix: corrected per-partition social tension mapping (partition index, not pointer cast)
+
+#### In Progress
+
+- [ ] None
+
+#### Next
+
+- [ ] Phase 6: Discovery, Biology, And Institutions
+
+#### Blocked
+
+- [ ] None
+
+---
+
 ### Phase 2 - Minimal Presentation Shell
 
 #### Completed
@@ -229,13 +265,42 @@ Current status: **Phase 4 Complete** - Ready for Phase 5: Collective Agency
 
 ## Active Work Queue
 
-1. Phase 5: Collective Agency (Institutions and Factions)
-2. Phase 5 guardrails (must hold):
+1. Phase 6: Discovery, Biology, and Institutions
+2. Phase 5/6 guardrails (must hold):
    - Keep swarm/social layer active; do not replace individuals with unitary group actors
    - Promote groups only via explicit thresholds from `03_CollectiveAgency.md`
    - Preserve individual dissent/non-compliance under any downward-causation mechanics
+3. Carry-forward requirements:
+   - Corpse lifecycle: dead agents must persist long enough to feed waste and disease systems before final removal
+   - Keep human/animal co-evolution coupled to social fabric (domestication is relational, not a toggle)
 
 ## Update Log
+
+### 2026-03-14
+
+- Phase 5 close-out completed:
+  - Added frontend Phase 5 overlay (`Collectives`) with keyboard toggle `C`
+  - Added collective event schema section and Phase 5 metric-correlation notes in `docs/EventSchema.md`
+  - Fixed review blockers:
+    - Removed periodic dead-agent hard cleanup from simulation loop
+    - Corrected partition social-tension calculation to use partition index mapping
+  - Full workspace tests passing after fixes
+
+### 2026-03-14
+
+- Implemented Phase 5 core: Collective Agency
+  - `polis-agents::collective` module with `CollectiveActor`, `CollectiveRegistry`, `CollectiveLifecycleState`
+  - Collective actor types: CoordinationCluster, StableGroup, CollectiveActor, HouseholdActor, OrganizationActor
+  - Group life-cycle: ephemeral → proto-group → unstable → stabilized → fragmenting → dissolved
+  - Promotion criteria based on 03_CollectiveAgency.md: boundary clarity, membership rules, shared resources, decision procedure, external capacity
+  - Internal structure: membership, roles, influence weights, pooled assets, legitimacy, factionalism
+  - Constitution types: MajorityVote, WeightedCouncil, Consensus, CommandHierarchy, PatriarchalDominance, OligarchicDominance
+  - Merge/split rules with hysteresis to prevent thrashing
+  - Disciplined downward causation: constraints/incentives, NOT direct overwriting of individual beliefs/preferences
+  - Collective events: CollectiveLifecycleTransition, CollectiveMerged, CollectiveSplit
+  - Collective metrics: total_collectives, total_collective_members, average_collective_size, average_collective_legitimacy, average_collective_factionalism
+  - Integration with simulation step in `polis-sim`
+  - All 87 tests passing, determinism parity maintained
 
 ### 2026-03-14
 

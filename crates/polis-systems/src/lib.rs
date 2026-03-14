@@ -1,5 +1,6 @@
 pub struct SystemsModule;
 
+use polis_agents::collective::CollectiveId;
 use polis_agents::{AgentPopulation, Individual};
 use polis_core::DeterministicRng;
 use polis_world::{PartitionState, evolve_animal_populations, evolve_fields, regenerate_resources};
@@ -665,6 +666,193 @@ pub enum HumanAnimalOutcome {
     Positive,
     Negative,
     Neutral,
+}
+
+// =============================================================================
+// Collective Agency Systems (Phase 5)
+// =============================================================================
+
+/// Process collective lifecycle phase
+/// Updates lifecycle states, handles merge/split detection, applies downward causation
+/// Returns events for lifecycle transitions
+pub fn collective_lifecycle_phase(
+    agents: &mut [Individual],
+    collective_registry: &mut polis_agents::collective::CollectiveRegistry,
+    tick: u64,
+    seed: u64,
+) -> Vec<CollectiveEvent> {
+    let mut rng = DeterministicRng::from_u64(seed ^ tick);
+    let mut events = Vec::new();
+
+    // Update lifecycle states for all collectives
+    let transitions = collective_registry.update_lifecycle_states(tick);
+    for (collective_id, old_state) in transitions {
+        if let Some(collective) = collective_registry.get(collective_id) {
+            events.push(CollectiveEvent::LifecycleTransition {
+                collective_id: collective_id.0,
+                old_state: lifecycle_to_string(old_state),
+                new_state: lifecycle_to_string(collective.lifecycle_state),
+            });
+        }
+    }
+
+    // Apply downward causation for each collective
+    // This modifies agent contexts through constraints, NOT direct overwriting
+    let collective_ids: Vec<_> = collective_registry
+        .active_collectives()
+        .iter()
+        .map(|c| c.id)
+        .collect();
+
+    for collective_id in collective_ids {
+        if let Some(collective) = collective_registry.get(collective_id) {
+            for agent in agents.iter_mut().filter(|a| a.is_alive) {
+                if collective.is_member(agent.id) {
+                    collective.apply_downward_causation(agent, &mut rng);
+                }
+            }
+        }
+    }
+
+    // Check for potential merges between compatible collectives
+    check_potential_merges(collective_registry, tick, &mut events, &mut rng);
+
+    // Check for potential splits in fragmenting collectives
+    check_potential_splits(collective_registry, tick, &mut events, &mut rng);
+
+    events
+}
+
+/// Check for potential merges between compatible collectives
+fn check_potential_merges(
+    collective_registry: &mut polis_agents::collective::CollectiveRegistry,
+    tick: u64,
+    events: &mut Vec<CollectiveEvent>,
+    _rng: &mut DeterministicRng,
+) {
+    // Get active collectives
+    let active: Vec<_> = collective_registry.active_collectives();
+    if active.len() < 2 {
+        return;
+    }
+
+    // Check pairs for merge compatibility
+    // Use indices to avoid borrow issues
+    let mut merges_to_perform: Vec<(CollectiveId, CollectiveId)> = Vec::new();
+
+    for i in 0..active.len() {
+        for j in (i + 1)..active.len() {
+            let c1 = &active[i];
+            let c2 = &active[j];
+
+            // Check merge criteria
+            let merge_criteria = c1.can_merge_with(c2);
+
+            // Merge if all criteria are strong enough (threshold: 60/100)
+            if merge_criteria.compatible_institutions >= 60
+                && merge_criteria.coordination_benefit >= 60
+                && merge_criteria.manageable_factional_distance >= 60
+                && merge_criteria.asset_integration_possible >= 60
+            {
+                merges_to_perform.push((c1.id, c2.id));
+            }
+        }
+    }
+
+    // Perform merges
+    for (primary_id, secondary_id) in merges_to_perform {
+        if let Some(merged_id) =
+            collective_registry.merge_collectives(primary_id, secondary_id, tick)
+        {
+            events.push(CollectiveEvent::Merged {
+                primary_id: primary_id.0,
+                secondary_id: secondary_id.0,
+                merged_id: merged_id.0,
+            });
+        }
+    }
+}
+
+/// Check for potential splits in fragmenting collectives
+fn check_potential_splits(
+    collective_registry: &mut polis_agents::collective::CollectiveRegistry,
+    tick: u64,
+    events: &mut Vec<CollectiveEvent>,
+    rng: &mut DeterministicRng,
+) {
+    // Get collectives that might split
+    let candidates: Vec<_> = collective_registry
+        .active_collectives()
+        .iter()
+        .filter(|c| {
+            c.lifecycle_state
+                == polis_agents::collective::CollectiveLifecycleState::FragmentingCollective
+                || c.factionalism > 70
+        })
+        .map(|c| c.id)
+        .collect();
+
+    for collective_id in candidates {
+        if let Some(collective) = collective_registry.get(collective_id) {
+            let split_criteria = collective.should_split();
+
+            // Split if all criteria are strong enough
+            if split_criteria.identifiable_subgroups >= 60
+                && split_criteria.independent_cohesion >= 60
+                && split_criteria.severe_disagreement >= 60
+                && split_criteria.independent_action_path >= 60
+            {
+                // Identify a subgroup to split off
+                // For simplicity, split based on factions or random half
+                let members: Vec<_> = collective.members.keys().copied().collect();
+                if members.len() >= 6 {
+                    let split_point = members.len() / 2;
+                    let subgroup = members[..split_point].to_vec();
+
+                    if let Some(new_id) =
+                        collective_registry.split_collective(collective_id, subgroup, tick)
+                    {
+                        events.push(CollectiveEvent::Split {
+                            original_id: collective_id.0,
+                            new_id: new_id.0,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Convert lifecycle state to string for events
+fn lifecycle_to_string(state: polis_agents::collective::CollectiveLifecycleState) -> String {
+    use polis_agents::collective::CollectiveLifecycleState::*;
+    match state {
+        EphemeralCoordination => "ephemeral_coordination".to_string(),
+        ProtoGroup => "proto_group".to_string(),
+        UnstableCollective => "unstable_collective".to_string(),
+        StabilizedCollective => "stabilized_collective".to_string(),
+        FragmentingCollective => "fragmenting_collective".to_string(),
+        Dissolved => "dissolved".to_string(),
+    }
+}
+
+/// Events generated by collective systems
+#[derive(Debug, Clone)]
+pub enum CollectiveEvent {
+    LifecycleTransition {
+        collective_id: u64,
+        old_state: String,
+        new_state: String,
+    },
+    Merged {
+        primary_id: u64,
+        secondary_id: u64,
+        merged_id: u64,
+    },
+    Split {
+        original_id: u64,
+        new_id: u64,
+    },
 }
 
 #[cfg(test)]
