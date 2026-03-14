@@ -1,13 +1,17 @@
-//! Individual agents for POLIS Phase 3
+//! Individual agents for POLIS Phase 3-4
 //!
-//! This module implements individuals with simple survival-driven behavior:
+//! This module implements individuals with:
 //! - Basic needs (food, water)
 //! - Movement between partitions
 //! - Consumption and metabolism
 //! - Mortality and reproduction
+//! - Social ties and trust/grievance (Phase 4)
+//! - Cross-species interaction primitives (Phase 4)
 
 use polis_core::DeterministicRng;
 use serde::{Deserialize, Serialize};
+
+pub mod social;
 
 pub struct AgentsModule;
 
@@ -216,6 +220,8 @@ impl Individual {
 pub struct AgentPopulation {
     next_id: AgentId,
     agents: Vec<Individual>,
+    /// Social network for Phase 4
+    pub social_network: social::SocialNetwork,
 }
 
 impl AgentPopulation {
@@ -223,6 +229,7 @@ impl AgentPopulation {
         Self {
             next_id: AgentId(0),
             agents: Vec::new(),
+            social_network: social::SocialNetwork::new(),
         }
     }
 
@@ -335,7 +342,19 @@ impl AgentPopulation {
             h = mix64(h ^ ((a.mobility as u64) << 29));
             h = mix64(h ^ ((a.metabolism as u64) << 37));
         }
+        // Include social network in digest
+        let stats = self.social_network.statistics();
+        h = mix64(h ^ stats.total_ties);
+        h = mix64(h ^ (stats.average_trust as u64).rotate_left(19));
+        h = mix64(h ^ (stats.average_grievance as u64).rotate_left(23));
+        h = mix64(h ^ stats.total_cooperation.rotate_left(27));
+        h = mix64(h ^ stats.total_conflict.rotate_left(31));
         h
+    }
+
+    /// Get social network statistics
+    pub fn social_statistics(&self) -> social::SocialNetworkStatistics {
+        self.social_network.statistics()
     }
 }
 

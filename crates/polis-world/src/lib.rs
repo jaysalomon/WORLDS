@@ -222,6 +222,20 @@ pub struct PartitionState {
     /// 0.0 (fully wild) to 1.0 (highly domesticated-tame lineage tendency)
     pub domestication_tameness: f64,
 
+    // Phase 4: Cross-species interaction state (human-animal)
+    /// Average familiarity of animals with humans in this partition
+    pub animal_familiarity: u8,
+    /// Average fear level of animals toward humans
+    pub animal_fear: u8,
+    /// Average aggression of animals toward humans
+    pub animal_aggression: u8,
+    /// Average tolerance of animals for human proximity
+    pub animal_human_tolerance: u8,
+    /// Cumulative positive human-animal interactions
+    pub positive_human_animal_interactions: u32,
+    /// Cumulative negative human-animal interactions
+    pub negative_human_animal_interactions: u32,
+
     // Carrying capacity for each resource
     pub carrying_capacity_food: u64,
     pub carrying_capacity_water: u64,
@@ -270,6 +284,14 @@ impl PartitionState {
             predator_population: 5 + rng.next_bounded(25),
             proto_domestic_population: rng.next_bounded(10),
             domestication_tameness: 0.05 + (rng.next_u64() as f64 / (u64::MAX as f64 + 1.0)) * 0.1,
+
+            // Cross-species interaction state (Phase 4)
+            animal_familiarity: 5 + rng.next_bounded(15) as u8,
+            animal_fear: 70 + rng.next_bounded(30) as u8,
+            animal_aggression: 20 + rng.next_bounded(40) as u8,
+            animal_human_tolerance: 5 + rng.next_bounded(20) as u8,
+            positive_human_animal_interactions: 0,
+            negative_human_animal_interactions: 0,
 
             // Carrying capacities (can vary by partition)
             carrying_capacity_food: 1000 + rng.next_bounded(2000),

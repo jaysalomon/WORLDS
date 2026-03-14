@@ -1,7 +1,7 @@
 # POLIS Build Tracking
 
 Last updated: **2026-03-14**
-Current status: **Phase 3 Complete** - Individuals and Basic Demography implemented
+Current status: **Phase 4 Complete** - Ready for Phase 5: Collective Agency
 
 ## Dashboard
 
@@ -11,6 +11,7 @@ Current status: **Phase 3 Complete** - Individuals and Basic Demography implemen
 | Phase 1 - World Substrate | Done | Includes waste loop and biology extension scaffold |
 | Phase 2 - Presentation Shell | Done | Windowed shell and read-only state contract validated |
 | Phase 3 - Individuals and Demography | Done | Agents with needs, movement, consumption, mortality, reproduction |
+| Phase 4 - Social Fabric | Done | Social ties, cooperation/conflict, cross-species primitives, frontend overlays complete |
 | Phase 7 - Reproducibility Audit | Partial | Helpers exist; full completion pending |
 
 ## Maintenance Protocol
@@ -94,7 +95,7 @@ Current status: **Phase 3 Complete** - Individuals and Basic Demography implemen
 
 #### Next
 
-- [ ] Phase 4: Collective Agency (Institutions and Factions)
+- [ ] Phase 5: Collective Agency (Institutions and Factions)
 
 #### Blocked
 
@@ -131,15 +132,58 @@ Current status: **Phase 3 Complete** - Individuals and Basic Demography implemen
 
 #### Next
 
-- [ ] Phase 4: Collective Agency (Institutions and Factions)
+- [ ] Phase 5: Collective Agency (Institutions and Factions)
 
 #### Blocked
 
 - [ ] None
 
+---
+
+### Phase 4 - Social Fabric
+
 #### Completed
 
-- [x] Windowed run mode (`--windowed`)
+- [x] Social ties graph: trust, grievance, interaction_count, last_interaction_tick
+- [x] Deterministic trust/grievance updates from repeated interactions
+- [x] Cooperation rules (help/share) gated by trust
+- [x] Conflict rules (local disputes) increasing with scarcity + grievance
+- [x] Event outputs: TrustShifted, CooperationOccurred, ConflictOccurred
+- [x] Cross-species interaction primitives (human-animal):
+  - animal-side state: familiarity, fear, aggression, human_tolerance
+  - repeated encounters update these deterministically
+  - early domestication progression depends on tolerance states
+  - harsh contact increases fear/aggression; stable low-threat contact increases tolerance
+- [x] Social metrics in TickMetrics: total_social_ties, average_trust, average_grievance, cooperation_count, conflict_count, social_tension
+- [x] Cross-species metrics: average_animal_familiarity, average_animal_fear, average_animal_tolerance
+- [x] Deterministic serial/parallel parity for social systems
+- [x] Phase 4 validation:
+  - Repeated interactions measurably shift trust/grievance
+  - Scarcity increases conflict hazard
+  - Higher trust increases cooperation frequency
+  - Human-animal repeated low-threat contact increases tolerance over time
+  - Determinism parity holds under fixed seed
+- [x] Frontend social overlay mode (tension/conflict hotspots and tie-strength visibility)
+- [x] Spec/doc sync for new runtime social/cross-species events and metrics
+
+#### In Progress
+
+- [ ] None
+
+#### Next
+
+- [ ] Phase 5: Collective Agency (Institutions and Factions)
+
+#### Blocked
+
+- [ ] None
+
+---
+
+### Phase 2 - Minimal Presentation Shell
+
+#### Completed
+
 - [x] `macroquad` integration
 - [x] Grid rendering of partitions (resource/field/demand overlays)
 - [x] Pause/Resume (`SPACE`)
@@ -161,7 +205,7 @@ Current status: **Phase 3 Complete** - Individuals and Basic Demography implemen
 
 #### Next
 
-- [ ] Phase 4: Collective Agency (Institutions and Factions)
+- [ ] Phase 5: Collective Agency (Institutions and Factions)
 
 #### Blocked
 
@@ -185,9 +229,43 @@ Current status: **Phase 3 Complete** - Individuals and Basic Demography implemen
 
 ## Active Work Queue
 
-1. Phase 4: Collective Agency (Institutions and Factions)
+1. Phase 5: Collective Agency (Institutions and Factions)
+2. Phase 5 guardrails (must hold):
+   - Keep swarm/social layer active; do not replace individuals with unitary group actors
+   - Promote groups only via explicit thresholds from `03_CollectiveAgency.md`
+   - Preserve individual dissent/non-compliance under any downward-causation mechanics
 
 ## Update Log
+
+### 2026-03-14
+
+- Completed Phase 4 close-out:
+  - Frontend social overlays: SocialTension (red/blue cohesion gradient) and CrossSpecies (green/red tolerance gradient)
+  - Keyboard controls: T for SocialTension, A for CrossSpecies overlays
+  - Social metrics in tooltips: fear/tolerance display
+  - Cross-species metrics in detail panel: fear, tolerance, familiarity
+  - Updated EventSchema.md with Phase 4 events (TrustShifted, CooperationOccurred, ConflictOccurred, HumanAnimalContact)
+  - Added supporting enums to documentation (TrustShiftReason, CooperationKind, ConflictReason, HumanAnimalContactType, HumanAnimalOutcome)
+  - Updated version history to 0.2.0
+  - Updated Rust implementation appendix with complete SimEvent enum
+  - All 109 tests passing, determinism parity verified
+
+### 2026-03-14
+
+- Implemented Phase 4 backend/runtime: Social Fabric with cross-species domestication primitives:
+  - `polis-agents::social` module with `SocialTie`, `SocialNetwork`, `CrossSpeciesState`
+  - Social ties graph: trust (-100 to +100), grievance (0-100), interaction history
+  - Deterministic trust/grievance updates from cooperation/conflict events
+  - Cooperation rules gated by trust levels
+  - Conflict rules based on scarcity stress and accumulated grievance
+  - Cross-species interaction: familiarity, fear, aggression, human_tolerance
+  - Human-animal contact types: Hunting, Feeding, Proximity, Handling
+  - Early domestication progression based on tolerance (not capture count)
+  - Social events: TrustShifted, CooperationOccurred, ConflictOccurred, HumanAnimalContact
+  - Social metrics: total_social_ties, average_trust, average_grievance, cooperation_count, conflict_count, social_tension
+  - Cross-species metrics: average_animal_familiarity, average_animal_fear, average_animal_tolerance
+  - Deterministic serial/parallel parity restored after deterministic ordering fixes
+  - Full workspace tests passing locally
 
 ### 2026-03-14
 

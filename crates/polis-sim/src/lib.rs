@@ -48,6 +48,17 @@ pub struct TickMetrics {
     pub average_agent_health: u64,
     pub average_agent_hunger: u64,
     pub average_agent_thirst: u64,
+    // Phase 4: Social fabric metrics
+    pub total_social_ties: u64,
+    pub average_trust: i64, // Signed for negative values
+    pub average_grievance: u64,
+    pub cooperation_count: u64,
+    pub conflict_count: u64,
+    pub social_tension: u64,
+    // Phase 4: Cross-species metrics
+    pub average_animal_familiarity: u64,
+    pub average_animal_fear: u64,
+    pub average_animal_tolerance: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,6 +75,75 @@ pub enum SimEvent {
         tick: u64,
         state_hash: u64,
     },
+    // Phase 4: Social fabric events
+    TrustShifted {
+        tick: u64,
+        agent_a: u64,
+        agent_b: u64,
+        new_trust: i8,
+        reason: TrustShiftReason,
+    },
+    CooperationOccurred {
+        tick: u64,
+        agent_a: u64,
+        agent_b: u64,
+        kind: CooperationKind,
+    },
+    ConflictOccurred {
+        tick: u64,
+        agent_a: u64,
+        agent_b: u64,
+        severity: u8,
+        reason: ConflictReason,
+    },
+    // Phase 4: Cross-species events
+    HumanAnimalContact {
+        tick: u64,
+        partition_id: u64,
+        contact_type: HumanAnimalContactType,
+        outcome: HumanAnimalOutcome,
+    },
+}
+
+/// Reason for trust shift
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TrustShiftReason {
+    Cooperation,
+    Conflict,
+    TimeDecay,
+}
+
+/// Types of cooperation
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CooperationKind {
+    ResourceSharing,
+    MutualAid,
+    Information,
+}
+
+/// Reason for conflict
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ConflictReason {
+    ResourceScarcity,
+    Grievance,
+    Territorial,
+}
+
+/// Type of human-animal contact
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HumanAnimalContactType {
+    Hunting,   // Negative: harsh
+    Feeding,   // Positive: gentle
+    Proximity, // Neutral: just nearby
+    Handling,  // Could be positive or negative
+}
+
+/// Outcome of human-animal contact
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HumanAnimalOutcome {
+    Positive,
+    Negative,
+    Neutral,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -272,6 +352,7 @@ impl Simulation {
     pub fn step_with_mode(&mut self, mode: ExecutionMode) {
         use polis_systems::{
             agent_commit_phase, agent_decision_phase, agent_perception_phase, cleanup_dead_agents,
+            cross_species_interaction_phase, social_interaction_phase,
         };
 
         self.state.tick = self.state.tick.wrapping_add(1);
@@ -340,6 +421,109 @@ impl Simulation {
 
         // Agent commit phase (needs update and mortality)
         agent_commit_phase(self.agents.agents_mut(), self.world.partitions_mut());
+
+        // Phase 4: Social interaction phase
+        // Process social interactions and get events
+        // We need to temporarily take the social network to avoid borrow issues
+        let mut social_network = std::mem::take(&mut self.agents.social_network);
+        let social_events = social_interaction_phase(
+            self.agents.agents(),
+            self.world.partitions(),
+            &mut social_network,
+            self.state.tick,
+            self.seed.0,
+        );
+        self.agents.social_network = social_network;
+
+        // Convert and add social events
+        for event in social_events {
+            let sim_event = match event {
+                polis_systems::SocialEvent::TrustShifted {
+                    agent_a,
+                    agent_b,
+                    new_trust,
+                    reason,
+                } => SimEvent::TrustShifted {
+                    tick: self.state.tick,
+                    agent_a,
+                    agent_b,
+                    new_trust,
+                    reason: match reason {
+                        polis_systems::TrustShiftReason::Cooperation => {
+                            TrustShiftReason::Cooperation
+                        }
+                        polis_systems::TrustShiftReason::Conflict => TrustShiftReason::Conflict,
+                        polis_systems::TrustShiftReason::TimeDecay => TrustShiftReason::TimeDecay,
+                    },
+                },
+                polis_systems::SocialEvent::Cooperation {
+                    agent_a,
+                    agent_b,
+                    kind,
+                } => SimEvent::CooperationOccurred {
+                    tick: self.state.tick,
+                    agent_a,
+                    agent_b,
+                    kind: match kind {
+                        polis_systems::CooperationKind::ResourceSharing => {
+                            CooperationKind::ResourceSharing
+                        }
+                        polis_systems::CooperationKind::MutualAid => CooperationKind::MutualAid,
+                        polis_systems::CooperationKind::Information => CooperationKind::Information,
+                    },
+                },
+                polis_systems::SocialEvent::Conflict {
+                    agent_a,
+                    agent_b,
+                    severity,
+                    reason,
+                } => SimEvent::ConflictOccurred {
+                    tick: self.state.tick,
+                    agent_a,
+                    agent_b,
+                    severity,
+                    reason: match reason {
+                        polis_systems::ConflictReason::ResourceScarcity => {
+                            ConflictReason::ResourceScarcity
+                        }
+                        polis_systems::ConflictReason::Grievance => ConflictReason::Grievance,
+                        polis_systems::ConflictReason::Territorial => ConflictReason::Territorial,
+                    },
+                },
+            };
+            self.events.push(sim_event);
+        }
+
+        // Phase 4: Cross-species interaction phase
+        let cross_species_events = cross_species_interaction_phase(
+            self.agents.agents(),
+            self.world.partitions_mut(),
+            self.state.tick,
+            self.seed.0,
+        );
+
+        // Convert and add cross-species events
+        for event in cross_species_events {
+            let contact_type = match event.contact_type {
+                polis_systems::HumanAnimalContactType::Hunting => HumanAnimalContactType::Hunting,
+                polis_systems::HumanAnimalContactType::Feeding => HumanAnimalContactType::Feeding,
+                polis_systems::HumanAnimalContactType::Proximity => {
+                    HumanAnimalContactType::Proximity
+                }
+                polis_systems::HumanAnimalContactType::Handling => HumanAnimalContactType::Handling,
+            };
+            let outcome = match event.outcome {
+                polis_systems::HumanAnimalOutcome::Positive => HumanAnimalOutcome::Positive,
+                polis_systems::HumanAnimalOutcome::Negative => HumanAnimalOutcome::Negative,
+                polis_systems::HumanAnimalOutcome::Neutral => HumanAnimalOutcome::Neutral,
+            };
+            self.events.push(SimEvent::HumanAnimalContact {
+                tick: self.state.tick,
+                partition_id: event.partition_id,
+                contact_type,
+                outcome,
+            });
+        }
 
         // Cleanup dead agents periodically (every 100 ticks)
         if self.state.tick % 100 == 0 {
@@ -477,9 +661,15 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
         total_tameness_ppm,
         total_demand,
         total_cohesion,
+        // Phase 4: Cross-species metrics
+        total_animal_familiarity,
+        total_animal_fear,
+        total_animal_tolerance,
     ) = world.partitions().iter().fold(
-        (0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64),
-        |(r, w, h, p, pd, tppm, d, c), partition| {
+        (
+            0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64,
+        ),
+        |(r, w, h, p, pd, tppm, d, c, afam, afe, at), partition| {
             (
                 r.wrapping_add(partition.total_resources().max(0) as u64),
                 w.wrapping_add(partition.waste.quantity.max(0) as u64),
@@ -489,12 +679,35 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
                 tppm.wrapping_add((partition.domestication_tameness * 1_000_000.0) as u64),
                 d.wrapping_add(partition.demand),
                 c.wrapping_add(partition.cohesion),
+                afam.wrapping_add(partition.animal_familiarity as u64),
+                afe.wrapping_add(partition.animal_fear as u64),
+                at.wrapping_add(partition.animal_human_tolerance as u64),
             )
         },
     );
 
     // Agent population metrics
     let agent_stats = agents.statistics();
+
+    // Social network metrics
+    let social_stats = agents.social_statistics();
+
+    // Calculate social tension across partitions
+    let social_tension: u64 = world
+        .partitions()
+        .iter()
+        .map(|p| {
+            let agents_in_partition: Vec<_> = agents
+                .agents()
+                .iter()
+                .filter(|a| a.is_alive && a.partition_id == p as *const _ as u64)
+                .map(|a| a.id)
+                .collect();
+            agents
+                .social_network
+                .partition_tension(&agents_in_partition) as u64
+        })
+        .sum();
 
     TickMetrics {
         tick: world.tick(),
@@ -511,6 +724,17 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
         average_agent_health: agent_stats.average_health as u64,
         average_agent_hunger: agent_stats.average_hunger as u64,
         average_agent_thirst: agent_stats.average_thirst as u64,
+        // Phase 4 social metrics
+        total_social_ties: social_stats.total_ties,
+        average_trust: social_stats.average_trust as i64,
+        average_grievance: social_stats.average_grievance as u64,
+        cooperation_count: social_stats.total_cooperation,
+        conflict_count: social_stats.total_conflict,
+        social_tension: social_tension / partition_count.max(1),
+        // Phase 4 cross-species metrics
+        average_animal_familiarity: total_animal_familiarity / partition_count,
+        average_animal_fear: total_animal_fear / partition_count,
+        average_animal_tolerance: total_animal_tolerance / partition_count,
     }
 }
 
@@ -654,39 +878,43 @@ mod tests {
         sim.step();
         let events = sim.events();
 
-        assert_eq!(events.len(), 5);
+        // Core events: TickStarted, 3 PhaseApplied, TickCompleted
+        // Plus optional social events (TrustShifted, CooperationOccurred, ConflictOccurred, HumanAnimalContact)
+        assert!(
+            events.len() >= 5,
+            "Should have at least 5 core events, got {}",
+            events.len()
+        );
+
+        // First event should be TickStarted
         assert_eq!(events[0], SimEvent::TickStarted { tick: 1 });
-        assert_eq!(
-            events[1],
-            SimEvent::PhaseApplied {
-                tick: 1,
-                phase_index: 0,
-                partition_count: 64
+
+        // Find PhaseApplied events
+        let phase_events: Vec<&SimEvent> = events
+            .iter()
+            .filter(|e| matches!(e, SimEvent::PhaseApplied { .. }))
+            .collect();
+        assert_eq!(phase_events.len(), 3, "Should have 3 phase applied events");
+
+        // Check phase indices are in order
+        for (i, phase_event) in phase_events.iter().enumerate() {
+            if let SimEvent::PhaseApplied { phase_index, .. } = phase_event {
+                assert_eq!(*phase_index, i as u8, "Phase indices should be in order");
             }
+        }
+
+        // Last event should be TickCompleted
+        assert!(
+            matches!(
+                events.last(),
+                Some(SimEvent::TickCompleted {
+                    tick: 1,
+                    state_hash: _
+                })
+            ),
+            "Last event should be TickCompleted"
         );
-        assert_eq!(
-            events[2],
-            SimEvent::PhaseApplied {
-                tick: 1,
-                phase_index: 1,
-                partition_count: 64
-            }
-        );
-        assert_eq!(
-            events[3],
-            SimEvent::PhaseApplied {
-                tick: 1,
-                phase_index: 2,
-                partition_count: 64
-            }
-        );
-        assert!(matches!(
-            events[4],
-            SimEvent::TickCompleted {
-                tick: 1,
-                state_hash: _
-            }
-        ));
+
         assert_eq!(sim.metrics().len(), 1);
     }
 

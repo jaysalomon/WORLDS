@@ -286,6 +286,387 @@ pub fn cleanup_dead_agents(population: &mut AgentPopulation) {
     population.cleanup_dead();
 }
 
+// =============================================================================
+// Social Fabric Systems (Phase 4)
+// =============================================================================
+
+/// Process social interaction phase
+/// Agents in the same partition may interact, building trust or conflict
+pub fn social_interaction_phase(
+    agents: &[Individual],
+    partitions: &[PartitionState],
+    social_network: &mut polis_agents::social::SocialNetwork,
+    tick: u64,
+    seed: u64,
+) -> Vec<SocialEvent> {
+    let mut rng = DeterministicRng::from_u64(seed ^ tick);
+    let mut events = Vec::new();
+
+    // Group agents by partition
+    let mut partition_agents: std::collections::HashMap<u64, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (idx, agent) in agents.iter().enumerate() {
+        if agent.is_alive {
+            partition_agents
+                .entry(agent.partition_id)
+                .or_default()
+                .push(idx);
+        }
+    }
+
+    // Sort agent indices within each partition for determinism
+    for indices in partition_agents.values_mut() {
+        indices.sort();
+    }
+
+    // Process interactions within each partition (sorted for determinism)
+    let mut partition_ids: Vec<u64> = partition_agents.keys().copied().collect();
+    partition_ids.sort();
+    for partition_id in partition_ids {
+        let agent_indices = partition_agents.get(&partition_id).unwrap();
+        if agent_indices.len() < 2 {
+            continue;
+        }
+
+        let partition = match partitions.get(partition_id as usize) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // Calculate scarcity stress for this partition
+        let scarcity_stress = calculate_scarcity_stress(partition);
+
+        // Randomly select pairs for interaction (not everyone interacts every tick)
+        let num_interactions = (agent_indices.len() / 2).max(1);
+        for _ in 0..num_interactions {
+            if agent_indices.len() < 2 {
+                break;
+            }
+
+            let idx_a = rng.next_bounded(agent_indices.len() as u64) as usize;
+            let agent_a_idx = agent_indices[idx_a];
+            let agent_a = &agents[agent_a_idx];
+
+            // Find a different agent
+            let mut idx_b = rng.next_bounded(agent_indices.len() as u64) as usize;
+            let mut attempts = 0;
+            while idx_b == idx_a && attempts < 10 {
+                idx_b = rng.next_bounded(agent_indices.len() as u64) as usize;
+                attempts += 1;
+            }
+            if idx_b == idx_a {
+                continue;
+            }
+            let agent_b_idx = agent_indices[idx_b];
+
+            // Get current tie state
+            let tie = social_network.get_or_create_tie(agent_a.id, agents[agent_b_idx].id, tick);
+            let current_trust = tie.trust;
+            let current_grievance = tie.grievance;
+
+            // Determine interaction outcome
+            let interaction =
+                determine_interaction(current_trust, current_grievance, scarcity_stress, &mut rng);
+
+            match interaction {
+                InteractionOutcome::Cooperation => {
+                    social_network.record_cooperation(agent_a.id, agents[agent_b_idx].id, tick);
+                    if let Some(tie) = social_network.get_tie(agent_a.id, agents[agent_b_idx].id) {
+                        events.push(SocialEvent::TrustShifted {
+                            agent_a: agent_a.id.0,
+                            agent_b: agents[agent_b_idx].id.0,
+                            new_trust: tie.trust,
+                            reason: TrustShiftReason::Cooperation,
+                        });
+                    }
+                    events.push(SocialEvent::Cooperation {
+                        agent_a: agent_a.id.0,
+                        agent_b: agents[agent_b_idx].id.0,
+                        kind: CooperationKind::ResourceSharing,
+                    });
+                }
+                InteractionOutcome::Conflict { severity } => {
+                    social_network.record_conflict(
+                        agent_a.id,
+                        agents[agent_b_idx].id,
+                        severity,
+                        tick,
+                    );
+                    if let Some(tie) = social_network.get_tie(agent_a.id, agents[agent_b_idx].id) {
+                        events.push(SocialEvent::TrustShifted {
+                            agent_a: agent_a.id.0,
+                            agent_b: agents[agent_b_idx].id.0,
+                            new_trust: tie.trust,
+                            reason: TrustShiftReason::Conflict,
+                        });
+                    }
+                    events.push(SocialEvent::Conflict {
+                        agent_a: agent_a.id.0,
+                        agent_b: agents[agent_b_idx].id.0,
+                        severity,
+                        reason: ConflictReason::ResourceScarcity,
+                    });
+                }
+                InteractionOutcome::Neutral => {
+                    social_network.record_neutral(agent_a.id, agents[agent_b_idx].id, tick);
+                }
+            }
+        }
+    }
+
+    // Apply time decay to all ties
+    social_network.apply_decay(tick);
+
+    events
+}
+
+/// Calculate scarcity stress for a partition (0-100)
+fn calculate_scarcity_stress(partition: &PartitionState) -> u8 {
+    let food_ratio = (partition.food.quantity.max(0) as f64)
+        / (partition.carrying_capacity_food as f64).max(1.0);
+    let water_ratio = (partition.water.quantity.max(0) as f64)
+        / (partition.carrying_capacity_water as f64).max(1.0);
+
+    // Higher stress when resources are low
+    let avg_ratio = (food_ratio + water_ratio) / 2.0;
+    let stress = ((1.0 - avg_ratio.min(1.0)) * 100.0) as u8;
+    stress.min(100)
+}
+
+/// Possible interaction outcomes
+enum InteractionOutcome {
+    Cooperation,
+    Conflict { severity: u8 },
+    Neutral,
+}
+
+/// Determine what happens in an interaction
+fn determine_interaction(
+    trust: i8,
+    grievance: u8,
+    scarcity_stress: u8,
+    rng: &mut DeterministicRng,
+) -> InteractionOutcome {
+    // Base probabilities modified by trust and grievance
+    let cooperation_threshold = 30 + (trust as i64 * 50 / 100); // 30% at neutral, higher with trust
+    let conflict_threshold =
+        20 + (grievance as i64 * 40 / 100) + (scarcity_stress as i64 * 30 / 100);
+
+    let roll = rng.next_bounded(100) as i64;
+
+    if roll < cooperation_threshold {
+        InteractionOutcome::Cooperation
+    } else if roll < cooperation_threshold.saturating_add(conflict_threshold) {
+        let severity = ((grievance as u16 + scarcity_stress as u16) / 2).max(1) as u8;
+        InteractionOutcome::Conflict { severity }
+    } else {
+        InteractionOutcome::Neutral
+    }
+}
+
+/// Events generated by social interactions
+#[derive(Debug, Clone)]
+pub enum SocialEvent {
+    TrustShifted {
+        agent_a: u64,
+        agent_b: u64,
+        new_trust: i8,
+        reason: TrustShiftReason,
+    },
+    Cooperation {
+        agent_a: u64,
+        agent_b: u64,
+        kind: CooperationKind,
+    },
+    Conflict {
+        agent_a: u64,
+        agent_b: u64,
+        severity: u8,
+        reason: ConflictReason,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TrustShiftReason {
+    Cooperation,
+    Conflict,
+    TimeDecay,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CooperationKind {
+    ResourceSharing,
+    MutualAid,
+    Information,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ConflictReason {
+    ResourceScarcity,
+    Grievance,
+    Territorial,
+}
+
+// =============================================================================
+// Cross-Species Interaction Systems (Phase 4)
+// =============================================================================
+
+/// Process human-animal interactions
+/// Updates cross-species state based on agent proximity and actions
+pub fn cross_species_interaction_phase(
+    agents: &[Individual],
+    partitions: &mut [PartitionState],
+    tick: u64,
+    seed: u64,
+) -> Vec<CrossSpeciesEvent> {
+    let mut rng = DeterministicRng::from_u64(seed ^ tick);
+    let mut events = Vec::new();
+
+    // Group agents by partition
+    let mut partition_agent_counts: std::collections::HashMap<u64, usize> =
+        std::collections::HashMap::new();
+    for agent in agents.iter().filter(|a| a.is_alive) {
+        *partition_agent_counts
+            .entry(agent.partition_id)
+            .or_insert(0) += 1;
+    }
+
+    // Process each partition with both agents and animals in deterministic order.
+    let mut partition_ids: Vec<u64> = partition_agent_counts.keys().copied().collect();
+    partition_ids.sort_unstable();
+    for partition_id in partition_ids {
+        if partition_id >= partitions.len() as u64 {
+            continue;
+        }
+        let partition = &mut partitions[partition_id as usize];
+
+        // Skip if no animals present
+        let total_animals = partition.herbivore_population
+            + partition.predator_population
+            + partition.proto_domestic_population;
+        if total_animals == 0 {
+            continue;
+        }
+
+        // Determine contact type based on agent behavior
+        // (simplified: more agents = more chance of various contact types)
+        let agent_count = partition_agent_counts
+            .get(&partition_id)
+            .copied()
+            .unwrap_or(0);
+        let activity_bias = (agent_count as u64).min(20);
+        let contact_roll = (rng.next_bounded(100) + activity_bias) % 100;
+        let (contact_type, severity) = if contact_roll < 10 {
+            // Hunting attempt
+            (HumanAnimalContactType::Hunting, -15)
+        } else if contact_roll < 30 {
+            // Feeding/provisioning
+            (HumanAnimalContactType::Feeding, 10)
+        } else if contact_roll < 60 {
+            // Just proximity
+            (HumanAnimalContactType::Proximity, 2)
+        } else {
+            // Handling/capture attempt
+            (HumanAnimalContactType::Handling, -5)
+        };
+
+        // Update cross-species state
+        update_cross_species_state(partition, severity, 20, tick);
+
+        // Determine outcome
+        let outcome = if severity > 0 {
+            HumanAnimalOutcome::Positive
+        } else if severity < -10 {
+            HumanAnimalOutcome::Negative
+        } else {
+            HumanAnimalOutcome::Neutral
+        };
+
+        // Track interactions
+        match outcome {
+            HumanAnimalOutcome::Positive => {
+                partition.positive_human_animal_interactions += 1;
+            }
+            HumanAnimalOutcome::Negative => {
+                partition.negative_human_animal_interactions += 1;
+            }
+            _ => {}
+        }
+
+        events.push(CrossSpeciesEvent {
+            partition_id,
+            contact_type,
+            outcome,
+        });
+    }
+
+    events
+}
+
+/// Update cross-species state for a partition
+fn update_cross_species_state(
+    partition: &mut PartitionState,
+    contact_severity: i8,
+    proximity: u8,
+    _tick: u64,
+) {
+    // Update all cross-species metrics based on contact
+    // This is a simplified model - in reality, individual animals would have states
+
+    if contact_severity < 0 {
+        // Negative contact
+        let severity = (-contact_severity) as u8;
+        partition.animal_fear = partition.animal_fear.saturating_add(severity * 2);
+        partition.animal_aggression = partition.animal_aggression.saturating_add(severity);
+        partition.animal_human_tolerance =
+            partition.animal_human_tolerance.saturating_sub(severity);
+    } else {
+        // Positive contact
+        let benefit = contact_severity as u8;
+        if proximity <= partition.animal_human_tolerance {
+            partition.animal_human_tolerance =
+                (partition.animal_human_tolerance + benefit).min(100);
+            partition.animal_fear = partition.animal_fear.saturating_sub(benefit * 2);
+        }
+        partition.animal_aggression = partition.animal_aggression.saturating_sub(benefit);
+    }
+
+    // Always increase familiarity with contact
+    let familiarity_increase = if contact_severity < 0 {
+        ((-contact_severity) / 2) as u8
+    } else {
+        (contact_severity as u8) / 2
+    };
+    partition.animal_familiarity = (partition.animal_familiarity + familiarity_increase).min(100);
+
+    // Bounds enforcement
+    partition.animal_fear = partition.animal_fear.min(100);
+    partition.animal_aggression = partition.animal_aggression.min(100);
+}
+
+/// Events generated by cross-species interactions
+#[derive(Debug, Clone)]
+pub struct CrossSpeciesEvent {
+    pub partition_id: u64,
+    pub contact_type: HumanAnimalContactType,
+    pub outcome: HumanAnimalOutcome,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum HumanAnimalContactType {
+    Hunting,
+    Feeding,
+    Proximity,
+    Handling,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum HumanAnimalOutcome {
+    Positive,
+    Negative,
+    Neutral,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{SystemPhase, apply_phase_to_partition, phase_partition_delta, registered_phases};

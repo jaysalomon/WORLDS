@@ -60,9 +60,11 @@ impl SimSpeed {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayType {
-    Resources, // Show food/water/material levels
-    Fields,    // Show temperature/moisture/fertility
-    Demand,    // Show population demand
+    Resources,     // Show food/water/material levels
+    Fields,        // Show temperature/moisture/fertility
+    Demand,        // Show population demand
+    SocialTension, // Phase 4: Show conflict/trust levels
+    CrossSpecies,  // Phase 4: Show animal fear/tolerance
     None,
 }
 
@@ -242,6 +244,19 @@ impl PresentationShell {
                 let pressure = (partition.demand as f32 / 1000.0).min(1.0);
                 Color::new(0.3 + pressure * 0.7, 0.2, 0.4, 1.0)
             }
+            OverlayType::SocialTension => {
+                // Phase 4: Color based on social tension (conflict potential)
+                // We use cohesion as a proxy since social tension is calculated per tick
+                let tension = (100.0 - partition.cohesion as f32 / 100.0).min(1.0);
+                // Red for high tension, blue for low tension
+                Color::new(tension, 0.2, 1.0 - tension, 1.0)
+            }
+            OverlayType::CrossSpecies => {
+                // Phase 4: Color based on animal tolerance of humans
+                let tolerance = partition.animal_human_tolerance as f32 / 100.0;
+                // Green for high tolerance (approaching domestication), red for fear
+                Color::new(1.0 - tolerance, tolerance, 0.2, 1.0)
+            }
             OverlayType::None => Color::new(0.3, 0.3, 0.4, 1.0),
         }
     }
@@ -329,6 +344,19 @@ impl PresentationShell {
             text_size,
             Color::new(0.8, 0.9, 0.8, 1.0),
         );
+        line_y += text_size + 4.0;
+
+        // Phase 4: Social/Cross-species summary
+        draw_text(
+            &format!(
+                "Fear/Tol: {}/{}",
+                partition.animal_fear, partition.animal_human_tolerance
+            ),
+            tx + padding,
+            line_y,
+            text_size,
+            Color::new(0.9, 0.7, 0.5, 1.0),
+        );
     }
 
     /// Draw UI controls and info
@@ -380,6 +408,8 @@ impl PresentationShell {
             OverlayType::Resources => "Resources",
             OverlayType::Fields => "Fields",
             OverlayType::Demand => "Demand",
+            OverlayType::SocialTension => "Social",
+            OverlayType::CrossSpecies => "Animals",
             OverlayType::None => "None",
         };
         draw_text(
@@ -393,7 +423,7 @@ impl PresentationShell {
         // Controls help
         let help_y = screen_height() - 80.0;
         draw_text(
-            "Controls: SPACE=Pause/Resume | S=Step | 1/2/3/4=Speed | R/F/D=Overlay | Click=Select",
+            "Controls: SPACE=Pause | S=Step | 1/2/3/4=Speed | R/F/D/T/A=Overlay | Click=Select",
             10.0,
             help_y,
             14.0,
@@ -572,6 +602,32 @@ impl PresentationShell {
             text_size - 2.0,
             Color::new(0.9, 0.8, 0.6, 1.0),
         );
+        line_y += text_size * 1.1;
+
+        // Phase 4: Cross-species interaction state
+        draw_text(
+            &format!("  Fear: {}", partition.animal_fear),
+            x + padding,
+            line_y,
+            text_size - 2.0,
+            Color::new(0.9, 0.6, 0.6, 1.0),
+        );
+        line_y += text_size * 1.1;
+        draw_text(
+            &format!("  Tolerance: {}", partition.animal_human_tolerance),
+            x + padding,
+            line_y,
+            text_size - 2.0,
+            Color::new(0.6, 0.9, 0.6, 1.0),
+        );
+        line_y += text_size * 1.1;
+        draw_text(
+            &format!("  Familiarity: {}", partition.animal_familiarity),
+            x + padding,
+            line_y,
+            text_size - 2.0,
+            Color::new(0.8, 0.8, 0.9, 1.0),
+        );
     }
 
     /// Handle input and return any commands
@@ -615,6 +671,14 @@ impl PresentationShell {
         }
         if is_key_pressed(KeyCode::D) {
             commands.push(SimCommand::ToggleOverlay(OverlayType::Demand));
+        }
+        if is_key_pressed(KeyCode::T) {
+            // Phase 4: Social tension overlay
+            commands.push(SimCommand::ToggleOverlay(OverlayType::SocialTension));
+        }
+        if is_key_pressed(KeyCode::A) {
+            // Phase 4: Cross-species overlay
+            commands.push(SimCommand::ToggleOverlay(OverlayType::CrossSpecies));
         }
         if is_key_pressed(KeyCode::N) {
             commands.push(SimCommand::ToggleOverlay(OverlayType::None));
