@@ -1,5 +1,7 @@
 pub struct SystemsModule;
 
+use polis_agents::{AgentPopulation, Individual};
+use polis_core::DeterministicRng;
 use polis_world::{PartitionState, evolve_animal_populations, evolve_fields, regenerate_resources};
 
 impl SystemsModule {
@@ -111,6 +113,177 @@ fn mix_hash(seed: u64, tick: u64, current: u64) -> u64 {
     x = x.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
     x ^= x >> 33;
     x
+}
+
+// =============================================================================
+// Agent Systems (Phase 3)
+// =============================================================================
+
+/// Process agent perception phase
+/// Agents assess their environment and decide if they want to move
+pub fn agent_perception_phase(
+    agents: &mut [Individual],
+    partitions: &[PartitionState],
+    tick: u64,
+    seed: u64,
+) {
+    let mut rng = DeterministicRng::from_u64(seed ^ tick);
+
+    for agent in agents.iter_mut().filter(|a| a.is_alive) {
+        if let Some(partition) = partitions.get(agent.partition_id as usize) {
+            // Check if agent wants to move based on needs
+            let food_available = partition.food.quantity.max(0) as u64;
+            let water_available = partition.water.quantity.max(0) as u64;
+
+            if agent.wants_to_move(food_available, water_available) {
+                // Find a neighboring partition with better resources
+                let new_partition = find_better_partition(
+                    agent.partition_id,
+                    partitions,
+                    &mut rng,
+                    agent.hunger > agent.thirst, // Prioritize food if hungrier
+                );
+
+                if new_partition != agent.partition_id {
+                    agent.move_to(new_partition);
+                }
+            }
+        }
+    }
+}
+
+/// Process agent decision phase
+/// Agents consume resources and decide on reproduction
+/// Returns number of newborns created (caller must handle spawning)
+pub fn agent_decision_phase(
+    agents: &mut [Individual],
+    partitions: &mut [PartitionState],
+    _tick: u64,
+    _seed: u64,
+) -> Vec<(u64, u8)> {
+    // First pass: consumption
+    for agent in agents.iter_mut().filter(|a| a.is_alive) {
+        if let Some(partition) = partitions.get_mut(agent.partition_id as usize) {
+            // Consume resources from partition
+            let food_available = partition.food.quantity.max(0) as u64;
+            let water_available = partition.water.quantity.max(0) as u64;
+
+            let (food_consumed, water_consumed) = agent.consume(food_available, water_available);
+
+            // Deduct from partition
+            partition.food.quantity = partition.food.quantity.saturating_sub(food_consumed as i64);
+            partition.water.quantity = partition
+                .water
+                .quantity
+                .saturating_sub(water_consumed as i64);
+
+            // Consumption produces waste
+            let total_consumed = food_consumed + water_consumed;
+            if total_consumed > 0 {
+                let waste_created = (total_consumed / 4).max(1);
+                partition.waste.deposit(waste_created);
+            }
+        }
+    }
+
+    // Second pass: reproduction - collect newborns
+    let mut newborns: Vec<(u64, u8)> = Vec::new();
+    let mut local_counts: std::collections::HashMap<u64, usize> = agents
+        .iter()
+        .filter(|a| a.is_alive)
+        .map(|a| a.partition_id)
+        .fold(std::collections::HashMap::new(), |mut acc, pid| {
+            *acc.entry(pid).or_insert(0) += 1;
+            acc
+        });
+
+    for agent in agents.iter_mut().filter(|a| a.is_alive) {
+        if agent.can_reproduce() {
+            // Check if there's space and resources
+            if let Some(partition) = partitions.get(agent.partition_id as usize) {
+                let local_population = local_counts.get(&agent.partition_id).copied().unwrap_or(0);
+                let carrying_capacity = 50; // Per partition agent limit
+
+                if local_population < carrying_capacity
+                    && partition.food.quantity > 200
+                    && partition.water.quantity > 200
+                {
+                    // Reproduction successful - reset parent cooldown
+                    agent.reproduce();
+                    newborns.push((agent.partition_id, agent.metabolism));
+                    // Reserve capacity for this newborn in the current tick.
+                    *local_counts.entry(agent.partition_id).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+
+    newborns
+}
+
+/// Process agent commit phase
+/// Update agent needs and check mortality
+pub fn agent_commit_phase(agents: &mut [Individual], partitions: &mut [PartitionState]) {
+    for agent in agents.iter_mut().filter(|a| a.is_alive) {
+        // Update needs (hunger, thirst, age)
+        agent.update_needs();
+
+        // Update partition demand based on agent population
+        if let Some(partition) = partitions.get_mut(agent.partition_id as usize) {
+            // Each living agent contributes to demand
+            partition.demand = partition.demand.saturating_add(1).min(10_000);
+        }
+    }
+}
+
+/// Find a better partition for an agent to move to
+fn find_better_partition(
+    current_partition_id: u64,
+    partitions: &[PartitionState],
+    _rng: &mut DeterministicRng,
+    prioritize_food: bool,
+) -> u64 {
+    let n = partitions.len() as u64;
+    if n <= 1 {
+        return current_partition_id;
+    }
+
+    // Check neighbors (simplified 1D ring topology)
+    let prev = (current_partition_id + n - 1) % n;
+    let next = (current_partition_id + 1) % n;
+
+    let current = &partitions[current_partition_id as usize];
+    let prev_partition = &partitions[prev as usize];
+    let next_partition = &partitions[next as usize];
+
+    // Score partitions based on resources
+    let score = |p: &PartitionState| -> i64 {
+        let food_score = p.food.quantity.max(0);
+        let water_score = p.water.quantity.max(0);
+        if prioritize_food {
+            food_score * 2 + water_score
+        } else {
+            food_score + water_score * 2
+        }
+    };
+
+    let current_score = score(current);
+    let prev_score = score(prev_partition);
+    let next_score = score(next_partition);
+
+    // Move to best option
+    if prev_score > current_score && prev_score >= next_score {
+        prev
+    } else if next_score > current_score {
+        next
+    } else {
+        current_partition_id
+    }
+}
+
+/// Cleanup dead agents from population
+pub fn cleanup_dead_agents(population: &mut AgentPopulation) {
+    population.cleanup_dead();
 }
 
 #[cfg(test)]

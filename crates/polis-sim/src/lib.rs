@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use polis_agents::AgentPopulation;
 use polis_core::{RunManifest, SimulationSeed, workspace_status};
 use polis_systems::{apply_phase_to_partition, registered_phases};
 use polis_world::{DEFAULT_PARTITION_COUNT, WorldState};
@@ -42,6 +43,11 @@ pub struct TickMetrics {
     pub average_tameness_ppm: u64,
     pub total_demand: u64,
     pub average_cohesion: u64,
+    // Phase 3: Agent population metrics
+    pub total_agents: u64,
+    pub average_agent_health: u64,
+    pub average_agent_hunger: u64,
+    pub average_agent_thirst: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -121,6 +127,7 @@ pub struct SimulationCheckpoint {
     pub seed: SimulationSeed,
     pub state: SimState,
     pub world: WorldState,
+    pub agents: AgentPopulation,
     pub events: Vec<SimEvent>,
     pub metrics: Vec<TickMetrics>,
 }
@@ -129,6 +136,7 @@ pub struct Simulation {
     seed: SimulationSeed,
     state: SimState,
     world: WorldState,
+    agents: AgentPopulation,
     events: Vec<SimEvent>,
     metrics: Vec<TickMetrics>,
 }
@@ -148,13 +156,18 @@ impl Simulation {
 
     pub fn new_with_partition_count(seed: SimulationSeed, partition_count: u64) -> Self {
         let world = WorldState::new(seed.0, partition_count.max(1));
+        let mut agents = AgentPopulation::new();
+        // Initialize with starting population (10 agents per partition)
+        agents.initialize(partition_count as usize * 10, partition_count, seed.0);
+
         Self {
             seed,
             state: SimState {
                 tick: 0,
-                state_hash: step_hash(seed.0, 0, world.digest()),
+                state_hash: step_hash(seed.0, 0, world.digest() ^ agents.digest().rotate_left(1)),
             },
             world,
+            agents,
             events: Vec::new(),
             metrics: Vec::new(),
         }
@@ -165,6 +178,7 @@ impl Simulation {
             seed: checkpoint.seed,
             state: checkpoint.state,
             world: checkpoint.world,
+            agents: checkpoint.agents,
             events: checkpoint.events,
             metrics: checkpoint.metrics,
         }
@@ -182,6 +196,18 @@ impl Simulation {
         &self.world
     }
 
+    pub fn world_mut(&mut self) -> &mut WorldState {
+        &mut self.world
+    }
+
+    pub fn agents(&self) -> &AgentPopulation {
+        &self.agents
+    }
+
+    pub fn agents_mut(&mut self) -> &mut AgentPopulation {
+        &mut self.agents
+    }
+
     pub fn events(&self) -> &[SimEvent] {
         &self.events
     }
@@ -195,6 +221,7 @@ impl Simulation {
             seed: self.seed,
             state: self.state,
             world: self.world.clone(),
+            agents: self.agents.clone(),
             events: self.events.clone(),
             metrics: self.metrics.clone(),
         }
@@ -243,11 +270,23 @@ impl Simulation {
     }
 
     pub fn step_with_mode(&mut self, mode: ExecutionMode) {
+        use polis_systems::{
+            agent_commit_phase, agent_decision_phase, agent_perception_phase, cleanup_dead_agents,
+        };
+
         self.state.tick = self.state.tick.wrapping_add(1);
         self.world.set_tick(self.state.tick);
         self.events.push(SimEvent::TickStarted {
             tick: self.state.tick,
         });
+
+        // Agent perception phase (movement decisions)
+        agent_perception_phase(
+            self.agents.agents_mut(),
+            self.world.partitions(),
+            self.state.tick,
+            self.seed.0,
+        );
 
         for (phase_index, phase) in registered_phases().iter().enumerate() {
             match mode {
@@ -285,12 +324,39 @@ impl Simulation {
             });
         }
 
-        self.state.state_hash = step_hash(self.seed.0, self.state.tick, self.world.digest());
+        // Agent decision phase (consumption and reproduction)
+        let newborns = {
+            let agents = self.agents.agents_mut();
+            let partitions = self.world.partitions_mut();
+            agent_decision_phase(agents, partitions, self.state.tick, self.seed.0)
+        };
+
+        // Spawn newborns outside the borrow
+        for (partition_id, parent_metabolism) in newborns {
+            let seed = self.seed.0 ^ self.state.tick ^ partition_id;
+            self.agents
+                .spawn_newborn(partition_id, parent_metabolism, seed);
+        }
+
+        // Agent commit phase (needs update and mortality)
+        agent_commit_phase(self.agents.agents_mut(), self.world.partitions_mut());
+
+        // Cleanup dead agents periodically (every 100 ticks)
+        if self.state.tick % 100 == 0 {
+            cleanup_dead_agents(&mut self.agents);
+        }
+
+        self.state.state_hash = step_hash(
+            self.seed.0,
+            self.state.tick,
+            self.world.digest() ^ self.agents.digest().rotate_left(1),
+        );
         self.events.push(SimEvent::TickCompleted {
             tick: self.state.tick,
             state_hash: self.state.state_hash,
         });
-        self.metrics.push(compute_tick_metrics(&self.world));
+        self.metrics
+            .push(compute_tick_metrics(&self.world, &self.agents));
     }
 
     pub fn run_for(&mut self, ticks: u64) -> RunSummary {
@@ -400,7 +466,7 @@ fn step_hash(seed: u64, tick: u64, current: u64) -> u64 {
     x
 }
 
-fn compute_tick_metrics(world: &WorldState) -> TickMetrics {
+fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMetrics {
     let partition_count = world.partition_count().max(1);
     let (
         total_resource,
@@ -427,6 +493,9 @@ fn compute_tick_metrics(world: &WorldState) -> TickMetrics {
         },
     );
 
+    // Agent population metrics
+    let agent_stats = agents.statistics();
+
     TickMetrics {
         tick: world.tick(),
         total_resource,
@@ -437,6 +506,11 @@ fn compute_tick_metrics(world: &WorldState) -> TickMetrics {
         average_tameness_ppm: total_tameness_ppm / partition_count,
         total_demand,
         average_cohesion: total_cohesion / partition_count,
+        // Phase 3 agent metrics
+        total_agents: agent_stats.total_population,
+        average_agent_health: agent_stats.average_health as u64,
+        average_agent_hunger: agent_stats.average_hunger as u64,
+        average_agent_thirst: agent_stats.average_thirst as u64,
     }
 }
 

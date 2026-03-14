@@ -1,7 +1,7 @@
 # POLIS Build Tracking
 
-Last updated: **2026-03-14**  
-Current status: **Phase 2 Complete** and **Phase 1 Biology Extension Added**
+Last updated: **2026-03-14**
+Current status: **Phase 3 Complete** - Individuals and Basic Demography implemented
 
 ## Dashboard
 
@@ -10,7 +10,7 @@ Current status: **Phase 2 Complete** and **Phase 1 Biology Extension Added**
 | Phase 0 - Core Runtime | Done | Deterministic runtime foundation complete |
 | Phase 1 - World Substrate | Done | Includes waste loop and biology extension scaffold |
 | Phase 2 - Presentation Shell | Done | Windowed shell and read-only state contract validated |
-| Phase 3 - Individuals and Demography | Next | Active next implementation target |
+| Phase 3 - Individuals and Demography | Done | Agents with needs, movement, consumption, mortality, reproduction |
 | Phase 7 - Reproducibility Audit | Partial | Helpers exist; full completion pending |
 
 ## Maintenance Protocol
@@ -94,7 +94,7 @@ Current status: **Phase 2 Complete** and **Phase 1 Biology Extension Added**
 
 #### Next
 
-- [ ] Phase 3: Individuals and Basic Demography
+- [ ] Phase 4: Collective Agency (Institutions and Factions)
 
 #### Blocked
 
@@ -102,7 +102,40 @@ Current status: **Phase 2 Complete** and **Phase 1 Biology Extension Added**
 
 ---
 
-### Phase 2 - Minimal Presentation Shell
+### Phase 3 - Individuals and Basic Demography
+
+#### Completed
+
+- [x] `Individual` agent struct with health, hunger, thirst, age, metabolism, mobility
+- [x] Agent lifecycle: initialization, needs update, consumption, mortality
+- [x] Agent movement based on needs and resource availability
+- [x] Reproduction with inheritance (metabolism) and cooldown
+- [x] `AgentPopulation` collection with statistics and cleanup
+- [x] Three-phase agent system integration:
+  - `agent_perception_phase()` - movement decisions
+  - `agent_decision_phase()` - consumption and reproduction
+  - `agent_commit_phase()` - needs update and mortality
+- [x] Agent metrics in `TickMetrics`: total_agents, average_agent_health, average_agent_hunger, average_agent_thirst
+- [x] Deterministic agent behavior with seeded RNG
+- [x] Phase 3 validation tests (17 tests in `crates/polis-sim/tests/agent_dynamics.rs`):
+  - Agents consume available resources
+  - Starvation reduces health, recovery restores health
+  - Population responds to substrate quality
+  - Reproduction increases population
+  - Cleanup removes dead agents
+  - Determinism verified with agents
+
+#### In Progress
+
+- [ ] None
+
+#### Next
+
+- [ ] Phase 4: Collective Agency (Institutions and Factions)
+
+#### Blocked
+
+- [ ] None
 
 #### Completed
 
@@ -128,7 +161,7 @@ Current status: **Phase 2 Complete** and **Phase 1 Biology Extension Added**
 
 #### Next
 
-- [ ] Phase 3: Individuals and Basic Demography
+- [ ] Phase 4: Collective Agency (Institutions and Factions)
 
 #### Blocked
 
@@ -152,9 +185,20 @@ Current status: **Phase 2 Complete** and **Phase 1 Biology Extension Added**
 
 ## Active Work Queue
 
-1. Phase 3: Individuals and Basic Demography
+1. Phase 4: Collective Agency (Institutions and Factions)
 
 ## Update Log
+
+### 2026-03-14
+
+- Completed Phase 3: Individuals and Basic Demography:
+  - `polis-agents` crate with `Individual` and `AgentPopulation` structs
+  - Agent lifecycle: needs (hunger/thirst), consumption, health, mortality, reproduction
+  - Movement system based on resource seeking and mobility
+  - Three-phase integration: perception (movement), decision (consumption/reproduction), commit (needs/mortality)
+  - Deterministic agent behavior with seeded RNG
+  - 17 validation tests in `crates/polis-sim/tests/agent_dynamics.rs`
+  - All 101 tests passing across workspace
 
 ### 2026-03-14
 
