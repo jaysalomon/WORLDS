@@ -1,0 +1,16 @@
+[package]
+name = "polis-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+polis-core = { path = "../polis-core" }
+polis-world = { path = "../polis-world" }
+polis-agents = { path = "../polis-agents" }
+polis-systems = { path = "../polis-systems" }
+polis-sim = { path = "../polis-sim" }
+polis-compute = { path = "../polis-compute" }
+polis-export = { path = "../polis-export" }

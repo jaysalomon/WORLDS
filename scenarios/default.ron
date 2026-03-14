@@ -1,0 +1,5 @@
+(
+    name: "default",
+    seed: 42,
+    notes: "Placeholder scenario used while the runtime is being built.",
+)

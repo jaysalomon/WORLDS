@@ -1,0 +1,29 @@
+[workspace]
+members = [
+    "crates/polis-app",
+    "crates/polis-core",
+    "crates/polis-world",
+    "crates/polis-agents",
+    "crates/polis-systems",
+    "crates/polis-compute",
+    "crates/polis-sim",
+    "crates/polis-export",
+    "crates/polis-frontend",
+    "crates/polis-narrative",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[workspace.metadata.polis]
+status = "scaffold"

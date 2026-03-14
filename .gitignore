@@ -1,0 +1,12 @@
+target/
+Cargo.lock
+coverage/
+artifacts/
+outputs/
+.python-version
+.venv/
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store
+Thumbs.db
