@@ -577,3 +577,15 @@ POLIS should model biology through a coupled framework of:
 - disease pressures
 
 This allows farming and domestication to emerge from niche construction, selective pressure, ecological limits, and social learning, while ensuring that biology remains a real driver of labor, transport, storage, inequality, settlement, and institutional development.
+
+## 16. Implementation Status Note (Current Runtime Scaffold)
+
+Current runtime implementation includes an early **parallel co-evolution scaffold** in the substrate layer:
+
+- wild herbivore and predator populations per partition
+- predator pressure on herbivores
+- human hunting pressure on herbivores
+- predator pressure that reduces human demand/cohesion proxies (humans as vulnerable prey/hosts)
+- proto-domestic capture pool and gradual tameness shift (`domestication_tameness`)
+
+This is intentionally minimal and deterministic. It is not yet a full life-history or household-managed domestication model, but it establishes the bidirectional ecological pressure needed for later Phase 3 and Phase 6 expansion.

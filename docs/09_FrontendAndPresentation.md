@@ -543,7 +543,80 @@ These questions remain for later refinement:
 
 These do not block the presentation model, but they matter for later design choices.
 
-## 16. Summary
+## 16. UI Pre-Visualization Prompt Templates
+
+To keep frontend implementation aligned with design intent while code is still evolving, POLIS should maintain reusable image-model prompt templates for visual reference generation.
+
+These prompts are for **design pre-visualization only**. They do not change backend truth or frontend data contracts.
+
+### 16.1 World-level UI pre-vis prompt
+
+```text
+Design a UI pre-visualization for a scientific civilization simulator called “POLIS”.
+Goal: show a serious research-grade simulation interface, not a fantasy game HUD.
+
+Scene and composition:
+- 16:9 desktop app screenshot mockup
+- Main center panel: zoomed-out world map with patch/region overlays, settlements, routes, biome coloring
+- Left panel: simulation controls (play/pause, speed, tick, seed, scenario)
+- Right panel: inspector for selected region with resources, waste, fertility, moisture, temperature, demand, cohesion
+- Bottom panel: time-series charts with uncertainty bands
+- Top bar: run status, serial/parallel mode, checkpoint/export controls, deterministic hash badge
+
+Visual style:
+- clean, modern, high-information scientific UI
+- restrained color palette, readable typography, clear visual hierarchy
+- product-grade data-viz style, not cartoonish, not cyberpunk
+
+Data/UX details:
+- map layer toggles: resources, waste, disease risk, institutions, trade
+- event log with timestamped events
+- provenance widget: run id, seed, scenario, checkpoint id
+- explicit uncertainty cues (bands/shading/labels)
+
+Output requirements:
+- polished realistic software screenshot look
+- no real-product logos, no fantasy art motifs
+```
+
+### 16.2 Micro-level UI pre-vis prompt (agents + landscaping + building)
+
+```text
+Design a UI pre-visualization for POLIS at settlement/micro scale.
+Goal: show agents moving, construction, and landscape transformation while preserving a scientific-sim UI tone.
+
+Scene and composition:
+- 16:9 desktop app screenshot mockup, camera focused on one settlement district
+- Main viewport: dozens of small agents visibly walking along paths, carrying materials, gathering near work sites
+- Active construction sites with scaffold-like structures, partial walls, expanding fields, road extension
+- Nearby landscape edits visible: cleared land, terracing/irrigation channels, tree removal/replanting patches
+- Left panel: play/pause/speed/tick controls and layer toggles
+- Right panel: selected-agent inspector (role, task, inventory, destination, social state) and selected-site inspector (build progress, required materials, labor assigned)
+- Bottom panel: local charts (resource inflow/outflow, waste accumulation, construction throughput, cohesion)
+- Top status bar: run id, seed, deterministic hash, checkpoint/export buttons
+
+Visual style:
+- believable simulation game aesthetic with readable scientific overlays
+- intentional color coding for tasks (build, move, gather, transport, idle)
+- subtle motion cues (path trails, work icons, progress bars), not exaggerated effects
+
+Data/UX details:
+- overlays for pathing, zoning/land use, waste hotspots, water/fertility fields
+- event list includes: “construction started/completed”, “land converted”, “waste threshold exceeded”
+- uncertainty and approximation indicators remain visible where relevant
+
+Output requirements:
+- polished high-detail UI mockup suitable as engineering reference
+- avoid fantasy UI tropes, avoid clutter, keep labels legible
+```
+
+### 16.3 Optional negative prompt
+
+```text
+cartoon HUD, fantasy RPG interface, neon cyberpunk style, unreadable tiny text, excessive particle effects, mobile layout, low-detail placeholders
+```
+
+## 17. Summary
 
 POLIS should present itself through layered visualization in which:
 

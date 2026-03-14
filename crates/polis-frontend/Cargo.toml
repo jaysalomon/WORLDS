@@ -14,3 +14,4 @@ polis-systems = { path = "../polis-systems" }
 polis-sim = { path = "../polis-sim" }
 polis-compute = { path = "../polis-compute" }
 polis-export = { path = "../polis-export" }
+macroquad = "0.4"

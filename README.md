@@ -1,59 +1,48 @@
 # POLIS
 
-> A research-grade civilization simulator you can actually watch.
+> A research-grade civilization simulator.
 
 [![CI](https://github.com/jaysalomon/WORLDS/actions/workflows/ci.yml/badge.svg)](https://github.com/jaysalomon/WORLDS/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/rust-1.94%2B-orange?logo=rust)
 ![Edition](https://img.shields.io/badge/edition-2024-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-POLIS is a scientific civilization sandbox. The backend models terrain, resources, biology,
-agent cognition, and collective behaviour through explicit, inspectable simulation steps.
-The frontend gives you a live window into that process — zoom in on a single settlement, pull
-back to watch continental migration patterns, or run headless and export everything to Parquet
-for offline analysis.
-
-Think of it as the serious engine that WorldBox wishes it had.
-
----
+POLIS is a scientific civilization sandbox. The backend models world and social dynamics
+through explicit, inspectable simulation steps. Current implementation focus is deterministic
+runtime foundations and exportable research artifacts.
 
 ## What makes it different
 
-| Other sandboxes | POLIS |
+| Typical sandbox | POLIS |
 |---|---|
-| Handcrafted "feel-good" rules | Physics-derived causality chains |
-| Black-box AI behaviour | Auditable agent state, logged to disk |
-| Fixed map scale | Continuous zoom: tile → biome → continent |
-| Play-to-win objectives | Observer-first: configure, launch, study |
-| No reproducibility | Deterministic RNG, snapshot + event log |
-
----
+| Scripted progression | Mechanism-driven simulation |
+| Black-box behavior | Auditable state + event logs |
+| Single-run storytelling | Batch-capable, reproducible runs |
+| Weak reproducibility | Seeded deterministic runtime + checkpoints |
 
 ## Architecture
 
-Ten Rust crates with a strict downward dependency graph:
+Ten Rust crates with strict dependency direction:
 
-```
-polis-core          ← shared types, RNG, config, event schema
-├── polis-world     ← terrain, climate, geography substrate
-├── polis-agents    ← individual agent state and cognition
-├── polis-compute   ← wgpu GPU abstraction (compute + render)
-├── polis-export    ← Arrow / Parquet data pipeline
-└── polis-narrative ← optional SLM narrative surface
-        └── polis-systems   ← domain subsystems (ecology, trade, …)
-                └── polis-sim       ← tick orchestrator, scenario runner
-                        └── polis-frontend  ← wgpu renderer + egui UI
-                                └── polis-app   ← binary entry point
+```text
+polis-core          <- shared types, RNG, config, manifest schema
+|- polis-world      <- world substrate and partition state
+|- polis-agents     <- agent-domain placeholder crate
+|- polis-compute    <- compute/backend placeholder crate
+|- polis-export     <- JSON/JSONL export utilities and bundle helpers
+`- polis-narrative  <- narrative placeholder crate
+        `- polis-systems   <- runtime phase logic
+                `- polis-sim       <- deterministic runtime and scheduler
+                        `- polis-frontend  <- frontend placeholder crate
+                                `- polis-app   <- CLI entry point
 ```
 
 Key properties:
 
-- **CPU-first correctness** — simulation logic is deterministic and fully testable without a GPU
-- **GPU in, GPU out** — the tilemap lives in a storage buffer shared between compute and render
-- **Headless mode** — `--features headless` strips all rendering dependencies for batch runs
-- **Reproducible** — every run carries a seed; any run can be replayed from its event log
-
----
+- CPU-first correctness
+- Deterministic serial/parallel parity
+- Headless-first CLI workflows
+- Checkpoint save/load and replay-resume support
 
 ## Quick start
 
@@ -61,56 +50,61 @@ Key properties:
 # Run tests across all crates
 cargo test --workspace
 
-# Open the simulation window
-cargo run -p polis-app
+# Single run (serial)
+cargo run -p polis-app -- --ticks 1000
+
+# Single run (parallel internal phase execution)
+cargo run -p polis-app -- --ticks 1000 --parallel
+
+# Batch sweep
+cargo run -p polis-app -- --ticks 500 --batch 32 --parallel
+
+# Export run artifacts
+cargo run -p polis-app -- --ticks 200 --export-dir target/exports/example
+
+# Save and resume from checkpoint
+cargo run -p polis-app -- --ticks 200 --save-checkpoint target/checkpoints/t200.json
+cargo run -p polis-app -- --ticks 800 --load-checkpoint target/checkpoints/t200.json
 ```
-
-Requires Rust 1.94+ (`rustup update stable`).
-
----
 
 ## Documentation
 
-The canonical design is in the numbered spec suite:
+Canonical design baseline:
 
-| Doc | Topic |
-|-----|-------|
-| [docs/SpecSuite.md](docs/SpecSuite.md) | Index and guiding principles |
-| [docs/01_WorldModel.md](docs/01_WorldModel.md) | Terrain, climate, geography |
-| [docs/02_StateModel.md](docs/02_StateModel.md) | State representation and ownership |
-| [docs/03_CollectiveAgency.md](docs/03_CollectiveAgency.md) | Collective behaviour and governance |
-| [docs/04_ResourcesAndMaterials.md](docs/04_ResourcesAndMaterials.md) | Material flows and economics |
-| [docs/05_DiscoveryHeuristics.md](docs/05_DiscoveryHeuristics.md) | Technology and discovery |
-| [docs/06_BiologyAndDomestication.md](docs/06_BiologyAndDomestication.md) | Biology, species, domestication |
-| [docs/07_SocietyAndInstitutions.md](docs/07_SocietyAndInstitutions.md) | Social structures and institutions |
-| [docs/08_ValidationAndExperiments.md](docs/08_ValidationAndExperiments.md) | Validation methodology |
-| [docs/09_FrontendAndPresentation.md](docs/09_FrontendAndPresentation.md) | Rendering and UI design |
-| [docs/10_TechnicalArchitecture.md](docs/10_TechnicalArchitecture.md) | Architecture and subsystem layout |
+- [docs/SpecSuite.md](docs/SpecSuite.md)
+- [docs/01_WorldModel.md](docs/01_WorldModel.md)
+- [docs/02_StateModel.md](docs/02_StateModel.md)
+- [docs/03_CollectiveAgency.md](docs/03_CollectiveAgency.md)
+- [docs/04_ResourcesAndMaterials.md](docs/04_ResourcesAndMaterials.md)
+- [docs/05_DiscoveryHeuristics.md](docs/05_DiscoveryHeuristics.md)
+- [docs/06_BiologyAndDomestication.md](docs/06_BiologyAndDomestication.md)
+- [docs/07_SocietyAndInstitutions.md](docs/07_SocietyAndInstitutions.md)
+- [docs/08_ValidationAndExperiments.md](docs/08_ValidationAndExperiments.md)
+- [docs/09_FrontendAndPresentation.md](docs/09_FrontendAndPresentation.md)
+- [docs/10_TechnicalArchitecture.md](docs/10_TechnicalArchitecture.md)
 
-Implementation planning:
+Planning and implementation order:
 
-- [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md) — crate definitions and dependency graph
-- [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md) — phased build roadmap
-
----
+- [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md)
+- [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md)
+- [TRACKING.md](TRACKING.md)
 
 ## Project status
 
-Early scaffold. All crates compile cleanly; `polis-core` has initial passing tests.
-Active development is beginning at Phase 0: wgpu window, deterministic tilemap, egui HUD.
+Phase 0 (Core Runtime Foundation) is complete, and Phase 1 (World Substrate) is underway:
 
-See [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md) for the full phase-by-phase roadmap.
-
----
+- scenario-driven deterministic runtime with serial/parallel parity
+- authoritative partitioned world state
+- deterministic event and metric streams
+- checkpoint save/load and replay-resume path
+- early substrate dynamics: regeneration, diffusion, field evolution
+- waste/byproduct loop: consumption creates waste and waste is naturally processed over time
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In brief: the numbered spec suite in [docs/](docs/) is the
-canonical design baseline — code follows spec, not the other way around.
-`cargo clippy -- -D warnings` must pass before any PR.
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md). The numbered spec suite in `docs/` is the authority.
+Code follows spec, not the other way around.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

@@ -383,6 +383,17 @@ These questions remain for later refinement:
 - What accessibility features should be included in v1?
 - Should POLIS support modding or user-created scenario packs?
 
+## 13.1 UI Pre-Vis Workflow
+
+While implementation is in progress, generate reference UI images for both:
+
+- world-scale analytical views
+- settlement-scale micro views (agents moving, landscaping, construction)
+
+Canonical prompt templates are maintained in:
+
+- `09_FrontendAndPresentation.md`, section `16. UI Pre-Visualization Prompt Templates`
+
 ## 14. Summary
 
 The POLIS frontend should be a charming, approachable sandbox that hides a serious simulation underneath three progressive layers: toybox, curiosity, and research. The technology stack is built around Rust, wgpu, and egui, chosen for AI-assisted development suitability, compile-time safety, and ecosystem maturity. Rendering shares the GPU device with simulation compute for zero-copy performance. Narrative generation uses local SLMs. Data export uses Arrow and Parquet for offline scientific analysis.

@@ -1,28 +1,20 @@
 # Contributing to POLIS
 
-Thanks for your interest. POLIS is a long-horizon research project; contributions that
-advance simulation correctness, crate quality, or documentation quality are very welcome.
+Thanks for your interest. POLIS is a long-horizon research project; contributions that improve simulation correctness, crate quality, or documentation quality are welcome.
 
----
+## Design Authority
 
-## Design authority
+The numbered spec suite (`01_WorldModel.md` through `10_TechnicalArchitecture.md`) is the canonical design baseline, indexed by [docs/SpecSuite.md](docs/SpecSuite.md).
 
-The numbered spec suite (`01_WorldModel.md` through `10_TechnicalArchitecture.md`) is the
-canonical design baseline — indexed by [docs/SpecSuite.md](docs/SpecSuite.md). Code follows spec, not
-the other way around. If you believe a spec decision is wrong, open a discussion issue first
-before writing code that conflicts with it.
+Code follows spec, not the other way around. If you believe a spec decision is wrong, open a design discussion before submitting conflicting code.
 
----
+## Build Requirements
 
-## Build requirements
-
-- Rust 1.94+ stable (`rustup update stable`)
+- Rust stable toolchain (see `rust-toolchain.toml`)
 - No additional system dependencies for headless builds
-- A Vulkan / DX12 / Metal capable GPU if you are working on the renderer
+- A GPU is only required when working on the frontend and compute acceleration paths
 
----
-
-## Before submitting a PR
+## Before Submitting a PR
 
 ```powershell
 cargo fmt --all
@@ -30,29 +22,23 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-All three must pass cleanly. CI enforces this on every push.
+All three should pass locally before opening a PR.
 
----
+## Crate Boundaries
 
-## Crate boundaries
+The dependency graph is strictly downward (`polis-core` -> ... -> `polis-app`). Do not introduce cycles or upward dependencies.
 
-The dependency graph is strictly downward (`polis-core` → … → `polis-app`). Do not
-introduce cycles or upward dependencies. See
-See [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md) for the full dependency graph and the
-intended responsibility of each crate.
+See [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md) for expected responsibilities and dependency direction.
 
----
+## Simulation Correctness Rules
 
-## Simulation correctness
-
-- All causal state changes must be deterministic and seed-reproducible.
-- Rendering, audio, and narrative code must never influence simulation state.
+- Causal state changes must be deterministic and seed-reproducible.
+- Rendering, audio, and narrative code must never mutate authoritative simulation state.
 - Prefer explicit, inspectable logic over opaque heuristics.
-- Every non-trivial state mutation should be expressible as a logged event.
+- Every non-trivial state mutation should be representable in the event stream.
+- Parallel execution is allowed, but deterministic reduction order is required for reproducibility.
 
----
+## Issues and Proposals
 
-## Opening issues
-
-Bug reports and feature requests are welcome — please use the issue templates provided.
-For larger design proposals, open a discussion issue and reference the relevant spec section.
+- Use issue templates for bugs and feature requests.
+- For larger design changes, open a discussion issue and reference the relevant numbered spec section.

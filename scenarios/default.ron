@@ -1,5 +1,6 @@
 (
     name: "default",
     seed: 42,
+    partition_count: 64,
     notes: "Placeholder scenario used while the runtime is being built.",
 )

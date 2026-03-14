@@ -8,3 +8,4 @@ publish.workspace = true
 
 [dependencies]
 polis-core = { path = "../polis-core" }
+serde.workspace = true
