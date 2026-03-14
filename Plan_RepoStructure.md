@@ -51,6 +51,7 @@ WORLDS/
 |- Plan_RepoStructure.md
 |- Plan_BuildOrder.md
 |- CLAUDE.md
+|- dxdiag_gpu.txt
 |- crates/
 |  |- polis-app/
 |  |- polis-core/
@@ -91,6 +92,10 @@ The Rust workspace is the implementation surface. The crate set already exists a
 - `shaders/` holds GPU shader sources
 - `assets/` holds frontend resources
 - `tests/` holds cross-crate integration and validation tests
+
+### 3.4 Local reference artifacts
+
+Machine-specific files such as `dxdiag_gpu.txt` may exist in the repository root during early development. These are local reference artifacts, not canonical project documentation, and should not be treated as part of the design baseline.
 
 ## 4. Crate Definitions
 

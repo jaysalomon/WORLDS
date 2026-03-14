@@ -5,6 +5,8 @@
 **Project:** POLIS  
 **Purpose:** Define how the simulation discovers useful processes, precursor systems, and generic structures without relying on a brittle hand-authored tech tree.
 
+**Status:** Legacy discovery draft. The authoritative design baseline is [05_DiscoveryHeuristics.md](/abs/path/e:/Drive/WORLDS/05_DiscoveryHeuristics.md) within the numbered suite indexed by [SpecSuite.md](/abs/path/e:/Drive/WORLDS/SpecSuite.md). This file is retained as source history.
+
 ## 1. Goal
 
 POLIS should not rely on a fixed scripted sequence such as:
