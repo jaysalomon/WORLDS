@@ -75,22 +75,22 @@ The canonical design is in the numbered spec suite:
 
 | Doc | Topic |
 |-----|-------|
-| [SpecSuite.md](SpecSuite.md) | Index and guiding principles |
-| [01_WorldModel.md](01_WorldModel.md) | Terrain, climate, geography |
-| [02_StateModel.md](02_StateModel.md) | State representation and ownership |
-| [03_CollectiveAgency.md](03_CollectiveAgency.md) | Collective behaviour and governance |
-| [04_ResourcesAndMaterials.md](04_ResourcesAndMaterials.md) | Material flows and economics |
-| [05_DiscoveryHeuristics.md](05_DiscoveryHeuristics.md) | Technology and discovery |
-| [06_BiologyAndDomestication.md](06_BiologyAndDomestication.md) | Biology, species, domestication |
-| [07_SocietyAndInstitutions.md](07_SocietyAndInstitutions.md) | Social structures and institutions |
-| [08_ValidationAndExperiments.md](08_ValidationAndExperiments.md) | Validation methodology |
-| [09_FrontendAndPresentation.md](09_FrontendAndPresentation.md) | Rendering and UI design |
-| [10_TechnicalArchitecture.md](10_TechnicalArchitecture.md) | Architecture and subsystem layout |
+| [docs/SpecSuite.md](docs/SpecSuite.md) | Index and guiding principles |
+| [docs/01_WorldModel.md](docs/01_WorldModel.md) | Terrain, climate, geography |
+| [docs/02_StateModel.md](docs/02_StateModel.md) | State representation and ownership |
+| [docs/03_CollectiveAgency.md](docs/03_CollectiveAgency.md) | Collective behaviour and governance |
+| [docs/04_ResourcesAndMaterials.md](docs/04_ResourcesAndMaterials.md) | Material flows and economics |
+| [docs/05_DiscoveryHeuristics.md](docs/05_DiscoveryHeuristics.md) | Technology and discovery |
+| [docs/06_BiologyAndDomestication.md](docs/06_BiologyAndDomestication.md) | Biology, species, domestication |
+| [docs/07_SocietyAndInstitutions.md](docs/07_SocietyAndInstitutions.md) | Social structures and institutions |
+| [docs/08_ValidationAndExperiments.md](docs/08_ValidationAndExperiments.md) | Validation methodology |
+| [docs/09_FrontendAndPresentation.md](docs/09_FrontendAndPresentation.md) | Rendering and UI design |
+| [docs/10_TechnicalArchitecture.md](docs/10_TechnicalArchitecture.md) | Architecture and subsystem layout |
 
 Implementation planning:
 
-- [Plan_RepoStructure.md](Plan_RepoStructure.md) — crate definitions and dependency graph
-- [Plan_BuildOrder.md](Plan_BuildOrder.md) — phased build roadmap
+- [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md) — crate definitions and dependency graph
+- [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md) — phased build roadmap
 
 ---
 
@@ -99,14 +99,14 @@ Implementation planning:
 Early scaffold. All crates compile cleanly; `polis-core` has initial passing tests.
 Active development is beginning at Phase 0: wgpu window, deterministic tilemap, egui HUD.
 
-See [Plan_BuildOrder.md](Plan_BuildOrder.md) for the full phase-by-phase roadmap.
+See [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md) for the full phase-by-phase roadmap.
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In brief: the numbered spec suite is the canonical
-design baseline — code follows spec, not the other way around.
+See [CONTRIBUTING.md](CONTRIBUTING.md). In brief: the numbered spec suite in [docs/](docs/) is the
+canonical design baseline — code follows spec, not the other way around.
 `cargo clippy -- -D warnings` must pass before any PR.
 
 ---

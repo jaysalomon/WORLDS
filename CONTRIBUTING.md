@@ -8,7 +8,7 @@ advance simulation correctness, crate quality, or documentation quality are very
 ## Design authority
 
 The numbered spec suite (`01_WorldModel.md` through `10_TechnicalArchitecture.md`) is the
-canonical design baseline — indexed by [SpecSuite.md](SpecSuite.md). Code follows spec, not
+canonical design baseline — indexed by [docs/SpecSuite.md](docs/SpecSuite.md). Code follows spec, not
 the other way around. If you believe a spec decision is wrong, open a discussion issue first
 before writing code that conflicts with it.
 
@@ -38,7 +38,7 @@ All three must pass cleanly. CI enforces this on every push.
 
 The dependency graph is strictly downward (`polis-core` → … → `polis-app`). Do not
 introduce cycles or upward dependencies. See
-[Plan_RepoStructure.md](Plan_RepoStructure.md) for the full dependency graph and the
+See [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md) for the full dependency graph and the
 intended responsibility of each crate.
 
 ---

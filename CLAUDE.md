@@ -17,19 +17,19 @@ The project should be treated as a scientific simulation platform first, not as 
 
 The authoritative design baseline is:
 
-- [SpecSuite.md](/abs/path/e:/Drive/WORLDS/SpecSuite.md)
-- [01_WorldModel.md](/abs/path/e:/Drive/WORLDS/01_WorldModel.md)
-- [02_StateModel.md](/abs/path/e:/Drive/WORLDS/02_StateModel.md)
-- [03_CollectiveAgency.md](/abs/path/e:/Drive/WORLDS/03_CollectiveAgency.md)
-- [04_ResourcesAndMaterials.md](/abs/path/e:/Drive/WORLDS/04_ResourcesAndMaterials.md)
-- [05_DiscoveryHeuristics.md](/abs/path/e:/Drive/WORLDS/05_DiscoveryHeuristics.md)
-- [06_BiologyAndDomestication.md](/abs/path/e:/Drive/WORLDS/06_BiologyAndDomestication.md)
-- [07_SocietyAndInstitutions.md](/abs/path/e:/Drive/WORLDS/07_SocietyAndInstitutions.md)
-- [08_ValidationAndExperiments.md](/abs/path/e:/Drive/WORLDS/08_ValidationAndExperiments.md)
-- [09_FrontendAndPresentation.md](/abs/path/e:/Drive/WORLDS/09_FrontendAndPresentation.md)
-- [10_TechnicalArchitecture.md](/abs/path/e:/Drive/WORLDS/10_TechnicalArchitecture.md)
+- [docs/SpecSuite.md](docs/SpecSuite.md)
+- [docs/01_WorldModel.md](docs/01_WorldModel.md)
+- [docs/02_StateModel.md](docs/02_StateModel.md)
+- [docs/03_CollectiveAgency.md](docs/03_CollectiveAgency.md)
+- [docs/04_ResourcesAndMaterials.md](docs/04_ResourcesAndMaterials.md)
+- [docs/05_DiscoveryHeuristics.md](docs/05_DiscoveryHeuristics.md)
+- [docs/06_BiologyAndDomestication.md](docs/06_BiologyAndDomestication.md)
+- [docs/07_SocietyAndInstitutions.md](docs/07_SocietyAndInstitutions.md)
+- [docs/08_ValidationAndExperiments.md](docs/08_ValidationAndExperiments.md)
+- [docs/09_FrontendAndPresentation.md](docs/09_FrontendAndPresentation.md)
+- [docs/10_TechnicalArchitecture.md](docs/10_TechnicalArchitecture.md)
 
-Legacy drafts such as [Worldspec1.md](/abs/path/e:/Drive/WORLDS/Worldspec1.md), [DesignSpec.md](/abs/path/e:/Drive/WORLDS/DesignSpec.md), and [DiscoveryHeuristics.md](/abs/path/e:/Drive/WORLDS/DiscoveryHeuristics.md) are source history only. They should not override the numbered suite.
+Legacy drafts such as [Worldspec1.md](docs/legacy/Worldspec1.md), [DesignSpec.md](docs/legacy/DesignSpec.md), and [DiscoveryHeuristics.md](docs/legacy/DiscoveryHeuristics.md) are source history only. They should not override the numbered suite.
 
 ## Current Repository State
 
@@ -79,7 +79,7 @@ When editing or adding code:
 
 Implementation planning is currently tracked in:
 
-- [Plan_RepoStructure.md](/abs/path/e:/Drive/WORLDS/Plan_RepoStructure.md)
-- [Plan_BuildOrder.md](/abs/path/e:/Drive/WORLDS/Plan_BuildOrder.md)
+- [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md)
+- [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md)
 
 These planning docs should be treated as implementation aids subordinate to the numbered suite.
