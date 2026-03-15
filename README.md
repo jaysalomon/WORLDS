@@ -50,6 +50,9 @@ Key properties:
 # Run tests across all crates
 cargo test --workspace
 
+# One-command demo run (exports artifacts)
+cargo run -p polis-app -- --demo --parallel
+
 # Single run (serial)
 cargo run -p polis-app -- --ticks 1000
 
@@ -65,6 +68,9 @@ cargo run -p polis-app -- --ticks 200 --export-dir target/exports/example
 # Save and resume from checkpoint
 cargo run -p polis-app -- --ticks 200 --save-checkpoint target/checkpoints/t200.json
 cargo run -p polis-app -- --ticks 800 --load-checkpoint target/checkpoints/t200.json
+
+# Run an explicit scenario file
+cargo run -p polis-app -- --scenario scenarios/demo_v1.ron --ticks 3000 --parallel
 ```
 
 ## Documentation
@@ -87,6 +93,7 @@ Planning and implementation order:
 
 - [docs/Plan_RepoStructure.md](docs/Plan_RepoStructure.md)
 - [docs/Plan_BuildOrder.md](docs/Plan_BuildOrder.md)
+- [docs/DemoPlaybook.md](docs/DemoPlaybook.md)
 - [TRACKING.md](TRACKING.md)
 
 ## Project status

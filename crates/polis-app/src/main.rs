@@ -21,8 +21,7 @@ fn main() {
 }
 
 fn run_headless(cli: Cli) {
-    let scenario_path = PathBuf::from("scenarios/default.ron");
-    let scenario = match load_scenario_file(&scenario_path) {
+    let scenario = match load_scenario_file(&cli.scenario_path) {
         Ok(scenario) => scenario,
         Err(err) => {
             eprintln!("failed to load scenario: {err}");
@@ -45,7 +44,7 @@ fn run_headless(cli: Cli) {
         )
     };
 
-    println!("Scenario: {}", scenario_path.display());
+    println!("Scenario: {}", cli.scenario_path.display());
     println!("Scenario name: {}", scenario.name);
     println!("Partition count: {}", scenario.partition_count);
 
@@ -88,17 +87,18 @@ fn run_headless(cli: Cli) {
                 std::process::exit(1);
             }
 
-            let checkpoint_file = export_dir.join("checkpoint.json");
-            if let Err(err) = sim.save_checkpoint(&checkpoint_file) {
-                eprintln!("failed to export checkpoint: {err}");
-                std::process::exit(1);
-            }
-
             let mut bundle_index = BTreeMap::new();
             bundle_index.insert("manifest".to_string(), "manifest.json".to_string());
             bundle_index.insert("events".to_string(), "events.jsonl".to_string());
             bundle_index.insert("metrics".to_string(), "metrics.jsonl".to_string());
-            bundle_index.insert("checkpoint".to_string(), "checkpoint.json".to_string());
+
+            let checkpoint_file = export_dir.join("checkpoint.json");
+            if let Err(err) = sim.save_checkpoint(&checkpoint_file) {
+                eprintln!("warning: failed to export checkpoint: {err}");
+            } else {
+                bundle_index.insert("checkpoint".to_string(), "checkpoint.json".to_string());
+            }
+
             if let Err(err) = write_json_file(export_dir, "bundle-index.json", &bundle_index) {
                 eprintln!("failed to export bundle index: {err}");
                 std::process::exit(1);
@@ -161,8 +161,7 @@ fn run_windowed(cli: Cli) {
     use polis_frontend::run_presentation_shell;
     use polis_sim::Simulation;
 
-    let scenario_path = PathBuf::from("scenarios/default.ron");
-    let scenario = match load_scenario_file(&scenario_path) {
+    let scenario = match load_scenario_file(&cli.scenario_path) {
         Ok(scenario) => scenario,
         Err(err) => {
             eprintln!("failed to load scenario: {err}");
@@ -212,6 +211,7 @@ fn run_windowed(_cli: Cli) {
 
 #[derive(Debug, Clone)]
 struct Cli {
+    scenario_path: PathBuf,
     ticks: u64,
     batch: u64,
     parallel: bool,
@@ -223,21 +223,34 @@ struct Cli {
 
 impl Cli {
     fn from_env() -> Self {
+        let default_scenario = PathBuf::from("scenarios/default.ron");
         let mut ticks = 1_000_u64;
+        let mut ticks_overridden = false;
         let mut batch = 1_u64;
         let mut parallel = false;
         let mut export_dir: Option<PathBuf> = None;
         let mut save_checkpoint: Option<PathBuf> = None;
         let mut load_checkpoint: Option<PathBuf> = None;
         let mut windowed = false;
+        let mut demo = false;
+        let mut scenario_path = default_scenario.clone();
 
         let mut args = env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--scenario" => {
+                    if let Some(value) = args.next() {
+                        scenario_path = PathBuf::from(value);
+                    }
+                }
+                "--demo" => {
+                    demo = true;
+                }
                 "--ticks" => {
                     if let Some(value) = args.next() {
                         if let Ok(parsed) = value.parse::<u64>() {
                             ticks = parsed.max(1);
+                            ticks_overridden = true;
                         }
                     }
                 }
@@ -273,7 +286,20 @@ impl Cli {
             }
         }
 
+        if demo {
+            if scenario_path == default_scenario {
+                scenario_path = PathBuf::from("scenarios/demo_v1.ron");
+            }
+            if !ticks_overridden {
+                ticks = 3_000;
+            }
+            if export_dir.is_none() {
+                export_dir = Some(PathBuf::from("target/exports/demo_v1"));
+            }
+        }
+
         Self {
+            scenario_path,
             ticks,
             batch,
             parallel,
