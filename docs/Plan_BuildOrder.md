@@ -418,11 +418,28 @@ Optimize where the validated runtime proves it is necessary.
 - profiling-driven hot-path optimization
 - selective GPU kernels for dense field or reduction work
 - CPU reference versus accelerated path comparisons
+- explicit backend contract (`CpuReference` / `GpuAccelerated`) in `polis-compute`
+- parity harness for each accelerated kernel:
+  - CPU reference output
+  - accelerated output
+  - tolerance and drift report
+- acceleration target ordering:
+  1. dense field kernels (diffusion/regeneration style math)
+  2. partition/global reductions
+  3. batch ensemble fan-out helpers
+  4. only then consider selective agent-adjacent vectorizable paths
 
 ### Validation
 
 - accelerated paths match CPU reference within tolerance
 - speedups are real and not purchased by semantic drift
+- determinism contract preserved in CPU reference mode for all scientific runs
+- acceleration accepted only when profiling confirms material gain on representative scenarios
+
+### Non-goals
+
+- no GPU-first rewrite of institutional, social-network, or collective-governance logic
+- no weakening of event ordering or provenance guarantees for speed
 
 ### Decision gate
 

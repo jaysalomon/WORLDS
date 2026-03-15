@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::Path;
+use std::collections::BTreeMap;
 
 use polis_agents::AgentPopulation;
-use polis_core::{DeterministicRng, RunManifest, SimulationSeed, workspace_status};
+use polis_core::{DeterministicRng, RunManifest, SimulationSeed};
 use polis_systems::{apply_phase_to_partition, registered_phases};
 use polis_world::{DEFAULT_PARTITION_COUNT, WorldState};
 use rayon::prelude::*;
@@ -260,6 +261,17 @@ pub enum DiscoveryStage {
 }
 
 impl DiscoveryStage {
+    pub const fn next(self) -> Option<Self> {
+        match self {
+            DiscoveryStage::AccidentalObservation => Some(DiscoveryStage::AffordanceCandidate),
+            DiscoveryStage::AffordanceCandidate => Some(DiscoveryStage::ProcessSchema),
+            DiscoveryStage::ProcessSchema => Some(DiscoveryStage::Technique),
+            DiscoveryStage::Technique => Some(DiscoveryStage::CodifiedKnowledge),
+            DiscoveryStage::CodifiedKnowledge => Some(DiscoveryStage::InstitutionalizedPractice),
+            DiscoveryStage::InstitutionalizedPractice => None,
+        }
+    }
+
     pub const fn as_u8(self) -> u8 {
         match self {
             DiscoveryStage::AccidentalObservation => 1,
@@ -306,12 +318,14 @@ pub enum SecondaryProductType {
 // RiskType is re-exported from polis_agents::inference
 pub use polis_agents::inference::RiskType;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunSummary {
     pub seed: SimulationSeed,
     pub partition_count: u64,
     pub ticks: u64,
     pub final_state_hash: u64,
+    /// Full state hash series for reproducibility verification
+    pub state_hash_series: Vec<u64>,
     pub event_count: u64,
     pub metric_count: u64,
 }
@@ -370,6 +384,8 @@ pub struct SimulationCheckpoint {
     pub agents: AgentPopulation,
     pub events: Vec<SimEvent>,
     pub metrics: Vec<TickMetrics>,
+    #[serde(default)]
+    pub discovery_surface_state: BTreeMap<(u64, u64), DiscoveryStage>,
 }
 
 pub struct Simulation {
@@ -379,6 +395,9 @@ pub struct Simulation {
     agents: AgentPopulation,
     events: Vec<SimEvent>,
     metrics: Vec<TickMetrics>,
+    discovery_surface_state: BTreeMap<(u64, u64), DiscoveryStage>,
+    /// State hash series for reproducibility verification
+    state_hash_series: Vec<u64>,
 }
 
 impl Simulation {
@@ -399,21 +418,25 @@ impl Simulation {
         let mut agents = AgentPopulation::new();
         // Initialize with starting population (10 agents per partition)
         agents.initialize(partition_count as usize * 10, partition_count, seed.0);
+        let initial_hash = step_hash(seed.0, 0, world.digest() ^ agents.digest().rotate_left(1));
 
         Self {
             seed,
             state: SimState {
                 tick: 0,
-                state_hash: step_hash(seed.0, 0, world.digest() ^ agents.digest().rotate_left(1)),
+                state_hash: initial_hash,
             },
             world,
             agents,
             events: Vec::new(),
             metrics: Vec::new(),
+            discovery_surface_state: BTreeMap::new(),
+            state_hash_series: vec![initial_hash],
         }
     }
 
     pub fn from_checkpoint(checkpoint: SimulationCheckpoint) -> Self {
+        // Note: Checkpoint doesn't store full hash series, start fresh
         Self {
             seed: checkpoint.seed,
             state: checkpoint.state,
@@ -421,6 +444,8 @@ impl Simulation {
             agents: checkpoint.agents,
             events: checkpoint.events,
             metrics: checkpoint.metrics,
+            discovery_surface_state: checkpoint.discovery_surface_state,
+            state_hash_series: vec![checkpoint.state.state_hash],
         }
     }
 
@@ -464,6 +489,7 @@ impl Simulation {
             agents: self.agents.clone(),
             events: self.events.clone(),
             metrics: self.metrics.clone(),
+            discovery_surface_state: self.discovery_surface_state.clone(),
         }
     }
 
@@ -721,6 +747,12 @@ impl Simulation {
         // Phase 6: Update animal populations and generate secondary products
         self.agents.animal_population.update_all();
 
+        // Phase 6 surface events: capability utilization and products
+        self.emit_animal_capability_events();
+        self.emit_secondary_product_events();
+        self.emit_zoonotic_pressure_events();
+        self.emit_discovery_surface_events();
+
         // Phase 6: Cleanup dead animals
         self.agents.animal_population.cleanup_dead();
 
@@ -769,6 +801,8 @@ impl Simulation {
             self.state.tick,
             self.world.digest() ^ self.agents.digest().rotate_left(1),
         );
+        // Track state hash for reproducibility verification
+        self.state_hash_series.push(self.state.state_hash);
         self.events.push(SimEvent::TickCompleted {
             tick: self.state.tick,
             state_hash: self.state.state_hash,
@@ -791,6 +825,7 @@ impl Simulation {
             partition_count: self.world.partition_count(),
             ticks: self.state.tick,
             final_state_hash: self.state.state_hash,
+            state_hash_series: std::mem::take(&mut self.state_hash_series),
             event_count: self.events.len() as u64,
             metric_count: self.metrics.len() as u64,
         }
@@ -1076,6 +1111,209 @@ impl Simulation {
                     contributing_factors: factors.iter().map(|(n, _)| n.clone()).collect(),
                 });
             }
+        }
+    }
+
+    /// Emit deterministic discovery lifecycle transitions at coarse cadence.
+    fn emit_discovery_surface_events(&mut self) {
+        if self.state.tick % 25 != 0 {
+            return;
+        }
+
+        for partition_id in 0..self.world.partition_count() {
+            let maybe_agent = self
+                .agents
+                .agents_in_partition(partition_id)
+                .filter(|a| a.is_alive)
+                .min_by_key(|a| a.id.0)
+                .map(|a| a.id.0);
+
+            let Some(agent_id) = maybe_agent else {
+                continue;
+            };
+
+            let knowledge_id = (partition_id % 12) + 1;
+            let key = (agent_id, knowledge_id);
+            let old_stage = self
+                .discovery_surface_state
+                .get(&key)
+                .copied()
+                .unwrap_or(DiscoveryStage::AccidentalObservation);
+
+            let Some(new_stage) = old_stage.next() else {
+                continue;
+            };
+
+            self.discovery_surface_state.insert(key, new_stage);
+            let method = match (self.state.tick + partition_id) % 4 {
+                0 => DiscoveryMethod::Repetition,
+                1 => DiscoveryMethod::Search,
+                2 => DiscoveryMethod::Accident,
+                _ => DiscoveryMethod::SocialTransmission,
+            };
+
+            self.events.push(SimEvent::DiscoveryStageTransition {
+                tick: self.state.tick,
+                agent_id,
+                knowledge_id,
+                old_stage,
+                new_stage,
+                method,
+            });
+        }
+    }
+
+    /// Emit animal capability utilization events from current partition-level animal state.
+    fn emit_animal_capability_events(&mut self) {
+        let mut events = Vec::new();
+        let partition_count = self.world.partition_count();
+        for partition_id in 0..partition_count {
+            let mut animals: Vec<_> = self
+                .agents
+                .animal_population
+                .animals_in_partition(partition_id)
+                .filter(|a| a.is_alive && a.is_domesticated)
+                .collect();
+            animals.sort_unstable_by_key(|a| a.id);
+
+            for animal in animals {
+                let Some(species) =
+                    polis_agents::animals::SpeciesArchetypes::by_id(animal.species_id)
+                else {
+                    continue;
+                };
+
+                let mut primary: Option<(AnimalCapability, u8)> = None;
+                let candidate = |capability, value: f32| {
+                    (capability, value.clamp(0.0, 100.0) as u8)
+                };
+
+                if species.capabilities.can_carry_load || species.capabilities.can_ride {
+                    primary = Some(candidate(
+                        AnimalCapability::Transport,
+                        animal.effective_transport_capacity(),
+                    ));
+                } else if species.capabilities.can_pull_traction {
+                    primary = Some(candidate(
+                        AnimalCapability::Traction,
+                        animal.effective_traction_power(),
+                    ));
+                } else if species.capabilities.can_hunt_assist {
+                    primary = Some(candidate(
+                        AnimalCapability::HuntingSupport,
+                        animal.effective_hunting_support(),
+                    ));
+                } else if species.capabilities.can_guard {
+                    primary = Some(candidate(
+                        AnimalCapability::Guarding,
+                        animal.effective_guard_utility(),
+                    ));
+                } else if species.capabilities.can_herd_assist {
+                    primary = Some(candidate(
+                        AnimalCapability::Herding,
+                        animal.effective_guard_utility(),
+                    ));
+                } else if species.capabilities.produces_milk {
+                    primary = Some(candidate(
+                        AnimalCapability::MilkProduction,
+                        animal.effective_milk_production(),
+                    ));
+                } else if species.capabilities.produces_eggs {
+                    primary = Some(candidate(
+                        AnimalCapability::EggProduction,
+                        animal.effective_egg_production(),
+                    ));
+                } else if species.capabilities.produces_fiber {
+                    primary = Some(candidate(
+                        AnimalCapability::FiberProduction,
+                        animal.effective_fiber_production(),
+                    ));
+                }
+
+                if let Some((capability, effectiveness)) = primary {
+                    events.push(SimEvent::AnimalCapabilityUtilized {
+                        tick: self.state.tick,
+                        animal_id: animal.id,
+                        species_id: animal.species_id.0,
+                        partition_id,
+                        capability,
+                        effectiveness,
+                    });
+                }
+            }
+        }
+        self.events.extend(events);
+    }
+
+    /// Emit per-partition secondary product production events.
+    fn emit_secondary_product_events(&mut self) {
+        for partition_id in 0..self.world.partition_count() {
+            let products = self.agents.animal_population.total_secondary_products(partition_id);
+            let milk = products.milk.max(0.0) as u32;
+            let eggs = products.eggs.max(0.0) as u32;
+            let fiber = products.fiber.max(0.0) as u32;
+
+            let manure: u32 = self
+                .agents
+                .animal_population
+                .animals_in_partition(partition_id)
+                .filter(|a| a.is_alive)
+                .map(|a| {
+                    let feed_consumed = (100 - a.nutrition) as f32 * 0.5;
+                    a.manure_output(feed_consumed).max(0.0) as u32
+                })
+                .sum();
+
+            if milk > 0 {
+                self.events.push(SimEvent::SecondaryProductProduced {
+                    tick: self.state.tick,
+                    partition_id,
+                    product_type: SecondaryProductType::Milk,
+                    amount: milk,
+                });
+            }
+            if eggs > 0 {
+                self.events.push(SimEvent::SecondaryProductProduced {
+                    tick: self.state.tick,
+                    partition_id,
+                    product_type: SecondaryProductType::Eggs,
+                    amount: eggs,
+                });
+            }
+            if fiber > 0 {
+                self.events.push(SimEvent::SecondaryProductProduced {
+                    tick: self.state.tick,
+                    partition_id,
+                    product_type: SecondaryProductType::Wool,
+                    amount: fiber,
+                });
+            }
+            if manure > 0 {
+                self.events.push(SimEvent::SecondaryProductProduced {
+                    tick: self.state.tick,
+                    partition_id,
+                    product_type: SecondaryProductType::Manure,
+                    amount: manure,
+                });
+            }
+        }
+    }
+
+    /// Emit per-partition zoonotic pressure change events.
+    fn emit_zoonotic_pressure_events(&mut self) {
+        for partition_id in 0..self.world.partition_count() {
+            let livestock_density = (self.calculate_livestock_density(partition_id) * 100.0) as u32;
+            let disease_pressure = (self.calculate_disease_pressure(partition_id) * 100.0) as u32;
+            let spillover_risk =
+                (self.calculate_corpse_load(partition_id) * 100.0).clamp(0.0, 100.0) as u8;
+
+            self.events.push(SimEvent::ZoonoticPressureChange {
+                tick: self.state.tick,
+                partition_id,
+                livestock_density,
+                disease_pressure,
+                spillover_risk,
+            });
         }
     }
 
@@ -1371,18 +1609,20 @@ pub fn build_run_manifest(
     summary: RunSummary,
     mode: ExecutionMode,
 ) -> RunManifest {
-    RunManifest {
-        scenario_name: scenario.name.clone(),
-        seed: summary.seed.0,
-        partition_count: summary.partition_count,
-        ticks: summary.ticks,
-        final_state_hash: summary.final_state_hash,
-        execution_mode: match mode {
+    RunManifest::new(
+        scenario.name.clone(),
+        summary.seed.0,
+        summary.partition_count,
+        summary.ticks,
+        summary.final_state_hash,
+        summary.state_hash_series,
+        match mode {
             ExecutionMode::Serial => "serial".to_string(),
             ExecutionMode::Parallel => "parallel".to_string(),
         },
-        workspace_status: workspace_status().to_string(),
-    }
+        summary.event_count,
+        summary.metric_count,
+    )
 }
 
 pub fn run_seed_batch(
@@ -1877,6 +2117,7 @@ mod tests {
             partition_count: 64,
             ticks: 10,
             final_state_hash: 99,
+            state_hash_series: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             event_count: 40,
             metric_count: 10,
         };
@@ -1888,6 +2129,8 @@ mod tests {
         assert_eq!(manifest.ticks, 10);
         assert_eq!(manifest.final_state_hash, 99);
         assert_eq!(manifest.execution_mode, "parallel");
+        assert_eq!(manifest.model_version.len() >= 5, true);
+        assert_eq!(manifest.enabled_subsystems.world_substrate, true);
     }
 
     #[test]

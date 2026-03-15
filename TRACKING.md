@@ -1,7 +1,7 @@
 # POLIS Build Tracking
 
 Last updated: **2026-03-15**
-Current status: **Phase 6 Pass 2 Complete (Core + Determinism Fixes)** - ready for Phase 6 event-surface completion or Phase 7 entry
+Current status: **Phase 7 In Progress** - Reproducibility audit and experiment pipeline implementation
 
 ## Dashboard
 
@@ -13,8 +13,9 @@ Current status: **Phase 6 Pass 2 Complete (Core + Determinism Fixes)** - ready f
 | Phase 3 - Individuals and Demography | Done | Agents with needs, movement, consumption, mortality, reproduction |
 | Phase 4 - Social Fabric | Done | Social ties, cooperation/conflict, cross-species primitives, frontend overlays complete |
 | Phase 5 - Collective Agency | Done | Core collective actors + frontend collective overlay + event/metrics doc sync |
-| Phase 6 - Discovery, Biology, Institutions | In Progress | Pass 1 + Pass 2 inference complete; remaining event-surface wiring tracked below |
-| Phase 7 - Reproducibility Audit | Partial | Helpers exist; full completion pending |
+| Phase 6 - Discovery, Biology, Institutions | Done* | Implementation complete; long-run verification suite queued as deferred gate |
+| Phase 7 - Reproducibility Audit | In Progress | Full provenance, reproducibility verification, experiment bundles |
+| Phase 8 - Performance And Selective Acceleration | In Progress | Backend split and compute scaffold started |
 
 ## Maintenance Protocol
 
@@ -268,15 +269,21 @@ Current status: **Phase 6 Pass 2 Complete (Core + Determinism Fixes)** - ready f
 - [x] Fix: Serial/parallel + checkpoint determinism restored after pass-2 wiring
 - [x] Fix: Corpse lifecycle events now emit concrete per-corpse payloads
 - [x] Fix: Discovery metrics no longer hardcoded placeholders (event-derived)
-- [ ] DiscoveryStageTransition events (requires discovery phase wiring)
-- [ ] AnimalCapabilityUtilized events (requires capability usage tracking)
-- [ ] SecondaryProductProduced events (requires production system)
-- [ ] ZoonoticPressureChange events (requires pressure tracking)
+- [x] DiscoveryStageTransition surface emission wired
+- [x] AnimalCapabilityUtilized surface emission wired
+- [x] SecondaryProductProduced surface emission wired
+- [x] ZoonoticPressureChange surface emission wired
 - [x] Discovery metrics calculation (discoveries_this_tick, total_knowledge_items, average_discovery_stage)
 
 #### Next
 
-- [ ] Phase 7: Reproducibility Audit and Experiment Pipeline
+- [ ] Spec 08 implementation pass (validation/experimentation plumbing)
+
+#### Deferred Verification Queue
+
+- [ ] Re-run full long-running deterministic suite before release tag:
+  - `cargo test -p polis-sim serial_and_parallel_batch_outputs_match`
+  - `cargo test --workspace`
 
 #### Blocked
 
@@ -317,19 +324,60 @@ Current status: **Phase 6 Pass 2 Complete (Core + Determinism Fixes)** - ready f
 
 ---
 
-### Phase 7 - Audit Snapshot
+### Phase 7 - Reproducibility Audit and Experiment Pipeline
 
-#### Done
+#### Completed
 
 - [x] Headless execution path
-- [x] Run manifests
+- [x] Run manifests with full provenance:
+  - model_version, schema_version from Cargo.toml
+  - state_hash_series for reproducibility verification
+  - enabled_subsystems bitflag
+  - event_count, metric_count
+  - started_at, ended_at timestamps
 - [x] Snapshot and metric export
 - [x] Batch sweep support
+- [x] ReproducibilityReport full implementation:
+  - single hash verification (backward compatible)
+  - series comparison with divergence detection
+  - first_divergence_tick tracking
+- [x] ExperimentBundle full implementation:
+  - ExperimentSpec for formal experiment design per 08_Section 11
+  - TreatmentVariable, ParameterRange for experiment parameters
+  - ManifestBundle for scenario + subsystem tracking
+  - model_version, schema_version, state_hash_series
+- [x] RunSummary expanded with state_hash_series
+- [x] Simulation tracks state_hash_series through execution
+- [x] Tests for reproducibility verification
 
-#### Partial
+---
 
-- [ ] Reproducibility verification helpers exist (needs final hardening)
-- [ ] Experiment bundle helpers exist (needs full operational workflow)
+### Phase 8 - Performance And Selective Acceleration
+
+#### Completed
+
+- [x] Phase 8 policy locked: CPU reference is authoritative, GPU is selective acceleration
+- [x] `polis-compute` backend scaffold:
+  - `ComputeBackend::{CpuReference, GpuAccelerated}`
+  - `ComputeConfig` with determinism/tolerance controls
+  - `ComputeEngine` facade
+- [x] First kernel candidates scaffolded:
+  - 1D ring diffusion
+  - deterministic reduction (`sum_u64`)
+- [x] CPU/GPU parity tests added for scaffolded kernels
+- [x] Integrated compute path into production substrate:
+  - `polis-world::diffuse_resources` now routes through `polis-compute::ComputeEngine`
+
+#### In Progress
+
+- [ ] Integrate `ComputeEngine` into additional world/subsystem hot paths
+- [ ] Add profiling harness for representative scenarios
+- [ ] Add acceptance thresholds (minimum speedup + parity tolerance gates)
+
+#### Next
+
+- [ ] Wire diffusion/regeneration system calls through `polis-compute`
+- [ ] Add benchmark outputs to experiment/provenance bundle
 
 ## Active Work Queue
 

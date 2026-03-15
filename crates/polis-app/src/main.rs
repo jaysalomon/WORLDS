@@ -62,8 +62,8 @@ fn run_headless(cli: Cli) {
         println!("Seed: {}", manifest.seed);
         println!("Ticks: {}", manifest.ticks);
         println!("Final state hash: {}", manifest.final_state_hash);
-        println!("Event count: {}", summary.event_count);
-        println!("Metric count: {}", summary.metric_count);
+        println!("Event count: {}", manifest.event_count);
+        println!("Metric count: {}", manifest.metric_count);
         println!("Runtime status: {}", manifest.workspace_status);
 
         if let Some(checkpoint_path) = &cli.save_checkpoint {

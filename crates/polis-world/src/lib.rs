@@ -1,6 +1,7 @@
 pub struct WorldModule;
 
 use polis_core::DeterministicRng;
+use polis_compute::{ComputeConfig, ComputeEngine};
 use serde::{Deserialize, Serialize};
 
 impl WorldModule {
@@ -526,35 +527,24 @@ pub fn diffuse_resources(partitions: &mut [PartitionState], diffusion_rate: f64)
         return;
     }
 
-    // Create temporary copies to avoid order-dependent artifacts
-    let original: Vec<_> = partitions.iter().map(|p| p.food.quantity).collect();
+    let engine = ComputeEngine::new(ComputeConfig::default());
+    let rate = diffusion_rate.clamp(0.0, 1.0) as f32;
 
+    // Food diffusion via compute backend.
+    let food_input: Vec<f32> = partitions.iter().map(|p| p.food.quantity as f32).collect();
+    let mut food_output = vec![0.0_f32; n];
+    engine.diffuse_ring_f32(&food_input, rate, &mut food_output);
     for (i, partition) in partitions.iter_mut().enumerate() {
-        let prev = original[(i + n - 1) % n];
-        let next = original[(i + 1) % n];
-        let curr = original[i];
-
-        // Calculate diffusion
-        let inflow = ((prev - curr) as f64 * diffusion_rate).round() as i64
-            + ((next - curr) as f64 * diffusion_rate).round() as i64;
-
-        // Apply with bounds checking
-        let new_qty = (partition.food.quantity + inflow).clamp(0, MAX_RESOURCE_VALUE as i64);
-        partition.food.quantity = new_qty;
+        partition.food.quantity = (food_output[i].round() as i64).clamp(0, MAX_RESOURCE_VALUE as i64);
     }
 
-    // Same for water
-    let original_water: Vec<_> = partitions.iter().map(|p| p.water.quantity).collect();
+    // Water diffusion via compute backend.
+    let water_input: Vec<f32> = partitions.iter().map(|p| p.water.quantity as f32).collect();
+    let mut water_output = vec![0.0_f32; n];
+    engine.diffuse_ring_f32(&water_input, rate, &mut water_output);
     for (i, partition) in partitions.iter_mut().enumerate() {
-        let prev = original_water[(i + n - 1) % n];
-        let next = original_water[(i + 1) % n];
-        let curr = original_water[i];
-
-        let inflow = ((prev - curr) as f64 * diffusion_rate).round() as i64
-            + ((next - curr) as f64 * diffusion_rate).round() as i64;
-
-        let new_qty = (partition.water.quantity + inflow).clamp(0, MAX_RESOURCE_VALUE as i64);
-        partition.water.quantity = new_qty;
+        partition.water.quantity =
+            (water_output[i].round() as i64).clamp(0, MAX_RESOURCE_VALUE as i64);
     }
 }
 
