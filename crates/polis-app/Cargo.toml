@@ -11,7 +11,6 @@ polis-core = { path = "../polis-core" }
 polis-sim = { path = "../polis-sim" }
 polis-export = { path = "../polis-export" }
 polis-frontend = { path = "../polis-frontend", optional = true }
-pollster = { version = "0.4", optional = true }
 
 [features]
-windowed = ["dep:polis-frontend", "dep:pollster"]
+windowed = ["dep:polis-frontend"]

@@ -158,7 +158,7 @@ fn run_headless(cli: Cli) {
 
 #[cfg(feature = "windowed")]
 fn run_windowed(cli: Cli) {
-    use polis_frontend::run_presentation_shell;
+    use polis_frontend::launch_presentation_shell;
     use polis_sim::Simulation;
 
     let scenario = match load_scenario_file(&cli.scenario_path) {
@@ -196,10 +196,8 @@ fn run_windowed(cli: Cli) {
     println!("  Click - Select partition for details");
     println!("  ESC - Exit");
 
-    // macroquad uses its own async runtime
-    pollster::block_on(async {
-        run_presentation_shell(sim).await;
-    });
+    // macroquad owns the main loop/thread context
+    launch_presentation_shell(sim);
 }
 
 #[cfg(not(feature = "windowed"))]

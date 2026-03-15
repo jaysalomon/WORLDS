@@ -796,6 +796,21 @@ pub async fn run_presentation_shell(simulation: Simulation) {
     }
 }
 
+/// Launch the macroquad window and run the presentation shell.
+/// This must be used from binaries instead of driving `run_presentation_shell`
+/// through an external async runtime.
+pub fn launch_presentation_shell(simulation: Simulation) {
+    macroquad::Window::from_config(
+        Conf {
+            window_title: "POLIS Presentation Shell".to_string(),
+            window_width: 1600,
+            window_height: 900,
+            ..Default::default()
+        },
+        run_presentation_shell(simulation),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
