@@ -1683,56 +1683,69 @@ fn step_hash(seed: u64, tick: u64, current: u64) -> u64 {
 // Phase 6: Helper functions for animal-related metrics
 
 /// Calculate total transport capacity across all partitions
-fn calculate_total_transport_capacity(agents: &AgentPopulation, partition_count: u64) -> u64 {
-    (0..partition_count)
+fn calculate_total_transport_capacity(
+    agents: &AgentPopulation,
+    partition_count: u64,
+    compute: &ComputeEngine,
+) -> u64 {
+    let values: Vec<u64> = (0..partition_count)
         .map(|p| agents.animal_population.total_transport_capacity(p) as u64)
-        .sum()
+        .collect();
+    compute.reduce_sum_u64(&values).0
 }
 
 /// Calculate total traction capacity across all partitions
-fn calculate_total_traction_capacity(agents: &AgentPopulation, partition_count: u64) -> u64 {
-    (0..partition_count)
+fn calculate_total_traction_capacity(
+    agents: &AgentPopulation,
+    partition_count: u64,
+    compute: &ComputeEngine,
+) -> u64 {
+    let values: Vec<u64> = (0..partition_count)
         .map(|p| agents.animal_population.total_traction_power(p) as u64)
-        .sum()
+        .collect();
+    compute.reduce_sum_u64(&values).0
 }
 
 /// Calculate milk production from all animals
-fn calculate_milk_production(agents: &AgentPopulation) -> f32 {
-    agents
+fn calculate_milk_production(agents: &AgentPopulation, compute: &ComputeEngine) -> f32 {
+    let values: Vec<f32> = agents
         .animal_population
         .animals()
         .iter()
         .filter(|a| a.is_alive)
         .map(|a| a.effective_milk_production())
-        .sum()
+        .collect();
+    compute.reduce_sum_f32(&values).0
 }
 
 /// Calculate egg production from all animals
-fn calculate_egg_production(agents: &AgentPopulation) -> f32 {
-    agents
+fn calculate_egg_production(agents: &AgentPopulation, compute: &ComputeEngine) -> f32 {
+    let values: Vec<f32> = agents
         .animal_population
         .animals()
         .iter()
         .filter(|a| a.is_alive)
         .map(|a| a.effective_egg_production())
-        .sum()
+        .collect();
+    compute.reduce_sum_f32(&values).0
 }
 
 /// Calculate wool/fiber production from all animals
-fn calculate_wool_production(agents: &AgentPopulation) -> f32 {
-    agents
+fn calculate_wool_production(agents: &AgentPopulation, compute: &ComputeEngine) -> f32 {
+    let values: Vec<f32> = agents
         .animal_population
         .animals()
         .iter()
         .filter(|a| a.is_alive)
         .map(|a| a.effective_fiber_production())
-        .sum()
+        .collect();
+    compute.reduce_sum_f32(&values).0
 }
 
 /// Calculate manure production from all animals
-fn calculate_manure_production(agents: &AgentPopulation) -> f32 {
+fn calculate_manure_production(agents: &AgentPopulation, compute: &ComputeEngine) -> f32 {
     // Estimate based on feed consumption (simplified)
-    agents
+    let values: Vec<f32> = agents
         .animal_population
         .animals()
         .iter()
@@ -1742,17 +1755,22 @@ fn calculate_manure_production(agents: &AgentPopulation) -> f32 {
             let feed_consumed = (100 - a.nutrition) as f32 * 0.5;
             a.manure_output(feed_consumed)
         })
-        .sum()
+        .collect();
+    compute.reduce_sum_f32(&values).0
 }
 
 /// Calculate zoonotic disease pressure from livestock density
-fn calculate_zoonotic_pressure(agents: &AgentPopulation, partition_count: u64) -> u64 {
+fn calculate_zoonotic_pressure(
+    agents: &AgentPopulation,
+    partition_count: u64,
+    compute: &ComputeEngine,
+) -> u64 {
     if partition_count == 0 {
         return 0;
     }
 
     // Calculate per-partition livestock density and aggregate pressure
-    (0..partition_count)
+    let values: Vec<u64> = (0..partition_count)
         .map(|partition_id| {
             let livestock_count = agents
                 .animal_population
@@ -1763,8 +1781,8 @@ fn calculate_zoonotic_pressure(agents: &AgentPopulation, partition_count: u64) -
             let corpse_pressure = agents.corpse_disease_pressure(partition_id) as u64;
             density_factor + corpse_pressure
         })
-        .sum::<u64>()
-        / partition_count
+        .collect();
+    compute.reduce_sum_u64(&values).0 / partition_count
 }
 
 fn compute_tick_metrics(
@@ -1936,15 +1954,15 @@ fn compute_tick_metrics(
         average_discovery_stage,
         // Phase 6: Animal metrics (calculated from animal population)
         total_domestic_animals: agents.animal_population.living_count() as u64,
-        transport_capacity: calculate_total_transport_capacity(agents, partition_count),
-        traction_capacity: calculate_total_traction_capacity(agents, partition_count),
+        transport_capacity: calculate_total_transport_capacity(agents, partition_count, &compute),
+        traction_capacity: calculate_total_traction_capacity(agents, partition_count, &compute),
         // Phase 6: Secondary product metrics (calculated from animal population)
-        milk_produced: calculate_milk_production(agents) as u64,
-        eggs_produced: calculate_egg_production(agents) as u64,
-        wool_produced: calculate_wool_production(agents) as u64,
-        manure_produced: calculate_manure_production(agents) as u64,
+        milk_produced: calculate_milk_production(agents, &compute) as u64,
+        eggs_produced: calculate_egg_production(agents, &compute) as u64,
+        wool_produced: calculate_wool_production(agents, &compute) as u64,
+        manure_produced: calculate_manure_production(agents, &compute) as u64,
         // Phase 6: Disease metrics
-        zoonotic_pressure: calculate_zoonotic_pressure(agents, partition_count),
+        zoonotic_pressure: calculate_zoonotic_pressure(agents, partition_count, &compute),
         corpse_count: agents.corpse_count() as u64,
     }
 }

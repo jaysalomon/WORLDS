@@ -83,6 +83,17 @@ impl ComputeEngine {
         };
         (sum, backend)
     }
+
+    /// Deterministic floating-point reduction kernel candidate for acceleration.
+    pub fn reduce_sum_f32(&self, values: &[f32]) -> (f32, ComputeBackend) {
+        let sum = reduce_sum_f32_cpu(values);
+        let backend = match self.config.backend {
+            ComputeBackend::CpuReference => ComputeBackend::CpuReference,
+            // Phase 8 scaffold: backend tag reserved for GPU implementation.
+            ComputeBackend::GpuAccelerated => ComputeBackend::GpuAccelerated,
+        };
+        (sum, backend)
+    }
 }
 
 /// CPU reference diffusion implementation (authoritative contract).
@@ -108,6 +119,20 @@ pub fn diffuse_ring_f32_cpu(input: &[f32], diffusion_rate: f32, output: &mut [f3
 /// CPU reference reduction implementation.
 pub fn reduce_sum_u64_cpu(values: &[u64]) -> u64 {
     values.iter().fold(0_u64, |acc, v| acc.wrapping_add(*v))
+}
+
+/// CPU reference floating-point reduction implementation.
+pub fn reduce_sum_f32_cpu(values: &[f32]) -> f32 {
+    // Kahan summation for improved numeric stability while preserving deterministic order.
+    let mut sum = 0.0_f32;
+    let mut c = 0.0_f32;
+    for v in values {
+        let y = *v - c;
+        let t = sum + y;
+        c = (t - sum) - y;
+        sum = t;
+    }
+    sum
 }
 
 #[cfg(test)]
@@ -154,5 +179,10 @@ mod tests {
             cpu_engine.reduce_sum_u64(&values).0,
             gpu_engine.reduce_sum_u64(&values).0
         );
+
+        let float_values = vec![0.1_f32, 1.5, 2.25, 10.0];
+        let cpu_sum = cpu_engine.reduce_sum_f32(&float_values).0;
+        let gpu_sum = gpu_engine.reduce_sum_f32(&float_values).0;
+        assert!((cpu_sum - gpu_sum).abs() < 1e-6);
     }
 }

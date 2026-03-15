@@ -369,6 +369,9 @@ Current status: **Phase 7 In Progress** - Reproducibility audit and experiment p
   - `polis-world::diffuse_resources` now routes through `polis-compute::ComputeEngine`
 - [x] Integrated compute path into simulation aggregation:
   - `polis-sim::compute_tick_metrics` now routes partition-wide reductions through `polis-compute`
+- [x] Added runnable performance probe:
+  - `cargo run -p polis-compute --bin perf_probe --release`
+  - captures diffusion + reduction timings with parity checks
 
 #### In Progress
 

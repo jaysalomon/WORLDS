@@ -387,11 +387,11 @@ impl KnowledgeRegistry {
         // Basic techniques
         let toolmaking = self.register("Basic Toolmaking", KnowledgeType::Technique);
         let fire_making = self.register("Fire Making", KnowledgeType::Technique);
-        let shelter_building = self.register("Shelter Building", KnowledgeType::Technique);
+        let _shelter_building = self.register("Shelter Building", KnowledgeType::Technique);
 
         // Materials
         let stone_working = self.register("Stone Working", KnowledgeType::Material);
-        let wood_working = self.register("Wood Working", KnowledgeType::Material);
+        let _wood_working = self.register("Wood Working", KnowledgeType::Material);
 
         // Processes (require techniques)
         let _cooking = self.register_with_config(
