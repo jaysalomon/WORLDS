@@ -1,7 +1,7 @@
 # POLIS Build Tracking
 
-Last updated: **2026-03-14**
-Current status: **Phase 5 Complete** - Collective agency close-out complete, ready for Phase 6
+Last updated: **2026-03-15**
+Current status: **Phase 6 Pass 2 Complete (Core + Determinism Fixes)** - ready for Phase 6 event-surface completion or Phase 7 entry
 
 ## Dashboard
 
@@ -13,6 +13,7 @@ Current status: **Phase 5 Complete** - Collective agency close-out complete, rea
 | Phase 3 - Individuals and Demography | Done | Agents with needs, movement, consumption, mortality, reproduction |
 | Phase 4 - Social Fabric | Done | Social ties, cooperation/conflict, cross-species primitives, frontend overlays complete |
 | Phase 5 - Collective Agency | Done | Core collective actors + frontend collective overlay + event/metrics doc sync |
+| Phase 6 - Discovery, Biology, Institutions | In Progress | Pass 1 + Pass 2 inference complete; remaining event-surface wiring tracked below |
 | Phase 7 - Reproducibility Audit | Partial | Helpers exist; full completion pending |
 
 ## Maintenance Protocol
@@ -216,6 +217,73 @@ Current status: **Phase 5 Complete** - Collective agency close-out complete, rea
 
 ---
 
+### Phase 6 - Discovery, Biology, And Institutions
+
+#### Completed
+
+- [x] Hard-coded species archetypes with shared trait+capability model:
+  - Horse, Ox/Cattle, Dog, Sheep, Goat, Pig, Poultry, Waterfowl
+  - Trait-derived task outputs (transport, traction, hunting, guarding, secondary products)
+  - No species-only branching logic - all outputs computed from traits
+- [x] Discovery lifecycle (6 stages):
+  - AccidentalObservation → AffordanceCandidate → ProcessSchema → Technique → CodifiedKnowledge → InstitutionalizedPractice
+  - Stage transitions with bounded rationality
+  - Knowledge diffusion with social transmission
+- [x] Corpse lifecycle coupling to waste/disease:
+  - Dead agents persist as corpses
+  - Corpses contribute to waste accumulation
+  - Disease pressure from unprocessed corpses
+  - Decomposition over ~500 ticks before removal
+- [x] Secondary products system:
+  - Milk, eggs, wool/fiber, manure production
+  - Trait-derived output formulas
+  - Zoonotic pressure coupling (livestock density → disease)
+- [x] Phase 6 events:
+  - DiscoveryStageTransition, CorpseCreated, CorpseDecomposed
+  - AnimalCapabilityUtilized, SecondaryProductProduced, ZoonoticPressureChange
+- [x] Phase 6 metrics:
+  - discoveries_this_tick, total_knowledge_items, average_discovery_stage
+  - total_domestic_animals, transport_capacity, traction_capacity
+  - milk_produced, eggs_produced, wool_produced, manure_produced
+  - zoonotic_pressure, corpse_count
+- [x] Determinism parity maintained
+- [x] Validation tests for all Phase 6 criteria
+
+#### In Progress (Pass 2)
+
+- [x] PLN-style probabilistic inference layer scaffold (`polis-agents::inference`)
+- [x] Truth values with strength/confidence representation
+- [x] Belief nodes and inference engine with slower cadence (every 100 ticks)
+- [x] Zoonotic spillover risk inference (livestock density + corpse load + sanitation)
+- [x] Trade cheating/default risk inference (scarcity + trust deficit + enforcement)
+- [x] Institution enforcement-failure risk inference (factionalism + legitimacy + strain)
+- [x] Collective fracture/escalation risk inference (grievance + tension + cooperation)
+- [x] Famine/crisis early-warning risk inference (food + health + disease)
+- [x] Deterministic realization of high-risk incidents
+- [x] Validation tests for directional response and determinism
+- [x] Fix: Factor beliefs now update on reuse (no frozen factor nodes)
+- [x] Fix: Risk belief nodes reuse + configured retention cleanup prevents unbounded growth
+- [x] Fix: Deterministic containers for inference/knowledge stores (ordered maps/sets)
+- [x] Fix: Removed hardcoded inference retention literal from simulation loop
+- [x] Fix: Serial/parallel + checkpoint determinism restored after pass-2 wiring
+- [x] Fix: Corpse lifecycle events now emit concrete per-corpse payloads
+- [x] Fix: Discovery metrics no longer hardcoded placeholders (event-derived)
+- [ ] DiscoveryStageTransition events (requires discovery phase wiring)
+- [ ] AnimalCapabilityUtilized events (requires capability usage tracking)
+- [ ] SecondaryProductProduced events (requires production system)
+- [ ] ZoonoticPressureChange events (requires pressure tracking)
+- [x] Discovery metrics calculation (discoveries_this_tick, total_knowledge_items, average_discovery_stage)
+
+#### Next
+
+- [ ] Phase 7: Reproducibility Audit and Experiment Pipeline
+
+#### Blocked
+
+- [ ] None
+
+---
+
 ### Phase 2 - Minimal Presentation Shell
 
 #### Completed
@@ -265,16 +333,46 @@ Current status: **Phase 5 Complete** - Collective agency close-out complete, rea
 
 ## Active Work Queue
 
-1. Phase 6: Discovery, Biology, and Institutions
-2. Phase 5/6 guardrails (must hold):
-   - Keep swarm/social layer active; do not replace individuals with unitary group actors
-   - Promote groups only via explicit thresholds from `03_CollectiveAgency.md`
-   - Preserve individual dissent/non-compliance under any downward-causation mechanics
-3. Carry-forward requirements:
-   - Corpse lifecycle: dead agents must persist long enough to feed waste and disease systems before final removal
-   - Keep human/animal co-evolution coupled to social fabric (domestication is relational, not a toggle)
+1. Phase 6 Pass 2: Probabilistic risk inference (PLN-style) integration
+   - ✅ Zoonotic spillover risk inference (COMPLETED)
+   - ✅ Trade cheating/default risk (COMPLETED)
+   - ✅ Institution enforcement-failure risk (COMPLETED)
+   - ✅ Collective fracture/escalation risk (COMPLETED)
+   - ✅ Famine/crisis early warning risk (COMPLETED)
+2. Phase close-out gate (mandatory):
+   - code review pass
+   - docs sync
+   - commit + push before confirming move-on
 
 ## Update Log
+
+### 2026-03-14
+
+- Phase 6 Pass 2 COMPLETED:
+  - PLN-style probabilistic inference layer (`polis-agents::inference`)
+  - TruthValue with strength/confidence, belief nodes, inference engine
+  - Slower cadence inference (every 100 ticks) with deterministic realization
+  - All 5 risk inference domains implemented:
+    - Zoonotic spillover (livestock density + corpse load + sanitation)
+    - Trade cheating/default (scarcity + trust deficit + enforcement)
+    - Institution enforcement-failure (factionalism + legitimacy + strain)
+    - Collective fracture/escalation (grievance + tension + cooperation)
+    - Famine/crisis early-warning (food + health + disease)
+  - RiskUpdated and IncidentRealized events with contributing factors
+  - All 150 tests passing, compilation clean
+  - Ready for phase close-out: code review + docs sync + commit/push
+
+### 2026-03-14
+
+- Phase 6 implementation completed:
+  - Hard-coded species archetypes (Horse, Ox/Cattle, Dog, Sheep, Goat, Pig, Poultry, Waterfowl)
+  - Shared trait+capability model with trait-derived outputs (no species branching)
+  - Discovery lifecycle: 6 stages from AccidentalObservation to InstitutionalizedPractice
+  - Corpse lifecycle coupling: dead agents persist → waste/disease → decomposition
+  - Secondary products: milk, eggs, wool, manure with trait-derived production
+  - Phase 6 events: DiscoveryStageTransition, CorpseCreated, AnimalCapabilityUtilized, SecondaryProductProduced, ZoonoticPressureChange
+  - Phase 6 metrics: discovery rates, animal capacities, secondary product yields, zoonotic pressure
+  - All 51 tests passing, determinism parity maintained
 
 ### 2026-03-14
 

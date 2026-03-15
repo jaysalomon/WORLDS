@@ -294,18 +294,71 @@ Add the major medium-speed world process domains that turn populations into soci
 - discovery heuristics
 - knowledge diffusion
 - organism and agroecosystem basics
+- hard-coded animal species archetypes with shared trait/capability model:
+  - horse, cattle/ox, dog, sheep, goat, pig, poultry, waterfowl
+  - optional wild baselines for prey/predator pressure where needed
+  - trait-derived task outputs for transport, traction, hunting support, guarding, and secondary products
 - early institutions and legitimacy mechanics
 - disease pressure where biologically appropriate
+- minimal conflict and territory mechanics:
+  - combat power with bounded multipliers (tech, supply, cohesion, terrain, leadership)
+  - conquest as control-transition process (not instant annexation)
+  - partition-level territory states (claimed/contested/controlled/occupied)
 
 ### Validation
 
 - discoveries depend on real affordances and process chains
 - biological management creates different trajectories than pure foraging
+- species specialisation produces measurable functional differences:
+  - horses improve mobility and transport
+  - cattle/ox improve traction and hauling
+  - dogs improve hunting/guard outcomes
+  - poultry/waterfowl contribute eggs/meat and waste loops
 - institutions emerge from pressure rather than scripted stage gates
+- conflict outcomes are sensitive to technology and supply but remain bounded
+- territory turnover requires sustained control, not a single battle win
 
 ### Decision gate
 
 Proceed only if these domains interact without breaking runtime clarity.
+
+### Phase 6 Pass 2: Probabilistic Risk Inference (PLN Layer)
+
+#### Goal
+
+Add a bounded probabilistic logic layer for uncertainty-heavy domains without replacing deterministic core simulation.
+
+#### Scope boundaries
+
+- Keep substrate, demography, and core resource stepping deterministic.
+- Use PLN/risk inference as an advisory layer that outputs probabilities consumed by existing decision and hazard systems.
+- Evaluate at slower cadence (for example daily/weekly), not per-agent per-tick.
+
+#### Priority domains
+
+1. Zoonotic and epidemic pressure
+2. Institutional enforcement failure
+3. Trade cheating/default risk
+4. Collective fracture/escalation risk
+5. Local famine/crisis early warning
+
+#### Required outputs
+
+- partition-level probabilistic risk scores (`0..1` or `0..100`)
+- event emissions for risk updates and realized incidents
+- top-factor attribution per risk update for auditability
+- deterministic seeded sampling path from probabilities to realized events
+
+#### Validation
+
+- serial/parallel parity preserved under fixed seed
+- risk responds directionally to input drivers (for example higher carcass load -> higher spillover risk)
+- calibration sanity checks against stylized expectations
+- no significant runtime regression from PLN cadence
+
+#### Decision gate
+
+Proceed only if probabilistic inference improves explanatory power without introducing opaque or non-deterministic behavior in the core runtime.
 
 ## 10. Phase 7: Validation, Export, And Experiment Pipeline
 

@@ -562,6 +562,105 @@ Persistent inter-group competition may select for:
 
 But it also increases fragility and maintenance burden.
 
+### 13.5 Minimal combat resolution model (v1)
+
+For v1, POLIS should use a transparent bounded combat model with a technology multiplier and a small number of interpretable modifiers.
+
+Per side combat power:
+
+`CombatPower = ForceSize * TechMultiplier * SupplyMultiplier * CohesionMultiplier * TerrainMultiplier * LeadershipMultiplier`
+
+Recommended default ranges:
+
+- `TechMultiplier`: `0.7..1.8`
+- `SupplyMultiplier`: `0.5..1.2`
+- `CohesionMultiplier`: `0.6..1.3`
+- `TerrainMultiplier`: `0.7..1.4`
+- `LeadershipMultiplier`: `0.8..1.2`
+
+These values should be scenario-configurable, not hardcoded forever.
+
+Outcome probability (attacker perspective):
+
+`P(AttackerWin) = CombatPower_A / (CombatPower_A + CombatPower_D)`
+
+Resolution should be deterministic under fixed seed by using seeded stochastic draw from this probability.
+
+### 13.6 Casualties and aftermath
+
+After outcome is sampled, both sides take losses.
+
+Loss rate should depend on:
+
+- relative power ratio
+- terrain
+- supply collapse
+- retreat vs rout condition
+
+Minimal v1 approach:
+
+- winner loss fraction: `0.05..0.20`
+- loser loss fraction: `0.15..0.50`
+- routed loser may take additional attrition in retreat phase
+
+Post-battle state updates should include:
+
+- surviving force
+- morale/cohesion shock
+- grievance increase in affected population
+- logistics stock drawdown
+
+### 13.7 Conquest and occupation
+
+Battle win should not automatically imply stable conquest.
+
+Use a separate control transition step:
+
+`ControlScore = MilitaryPresence * Legitimacy * AdministrativeReach * SupplyContinuity`
+
+`ResistanceScore = LocalGrievance * DefenderNetworkDensity * TerrainFriction * ExternalSupport`
+
+If `ControlScore > ResistanceScore` by configured margin for `N` ticks, territory shifts from contested to controlled.
+
+Territorial states:
+
+- `Unclaimed`
+- `Claimed`
+- `Contested`
+- `Controlled`
+- `Occupied`
+
+Occupation should decay if garrison or legitimacy collapses.
+
+### 13.8 Territory mapping mechanics
+
+Each partition should track:
+
+- controlling actor (nullable)
+- claimant set (0..many)
+- control strength (`0..100`)
+- contest pressure (`0..100`)
+- frontier flag
+
+Control should diffuse from connected controlled partitions and decay under:
+
+- low garrison
+- weak supply line continuity
+- high local grievance
+- repeated raids
+
+This keeps map changes path-dependent rather than binary.
+
+### 13.9 Validation requirements for conflict subsystem
+
+Minimum checks before accepting conflict mechanics:
+
+- superior technology increases expected win rate ceteris paribus
+- poor supply reduces expected performance even with larger force
+- terrain defensive advantage is measurable and bounded
+- repeated victories without administrative reach fail to produce stable control
+- serial/parallel parity holds under fixed seed and scenario
+
 ## 14. Social Complexity And Collapse Dynamics
 
 POLIS should allow both growth and overreach.

@@ -234,6 +234,66 @@ Important animal-level traits include:
 
 These traits determine whether animals function only as meat, or become platforms for transport, labor, wealth storage, and secondary products.
 
+### 6.2.1 Species archetypes (implementation-first set)
+
+For Phase 6, POLIS should ship with a hard-coded archetype table for core domestic and semi-domestic animals.
+
+This is an implementation convenience, not a theoretical shortcut.
+Each archetype must still map through shared trait and capability fields so later evolutionary expansion does not require rewrite.
+
+Required initial archetypes:
+
+- `Horse` (transport, riding, traction-light)
+- `Ox/Cattle` (traction-heavy, meat, milk, manure)
+- `Dog` (companionship, hunting support, guarding, herding support)
+- `Sheep` (wool, meat, milk-light, manure)
+- `Goat` (milk, meat, rough-terrain browsing, manure)
+- `Pig` (meat, waste conversion, high feed demand)
+- `Poultry` (egg production, meat, pest pressure coupling)
+- `Waterfowl` (egg/meat in wet systems, moderate pest coupling)
+
+Optional early wild/managed archetypes:
+
+- `Deer` (wild prey baseline)
+- `WildBoar` (wild risk and prey)
+- `PackBird` (regional variant where historically plausible)
+
+Each archetype should define baseline values for:
+
+- `strength`
+- `stamina`
+- `speed`
+- `temperament`
+- `trainability`
+- `feed_requirement`
+- `disease_susceptibility`
+- `reproduction_rate`
+- `lifespan_profile`
+- `waste_output`
+
+Each archetype should define capability flags:
+
+- `can_ride`
+- `can_carry_load`
+- `can_pull_traction`
+- `can_hunt_assist`
+- `can_guard`
+- `can_herd_assist`
+- `produces_milk`
+- `produces_fiber`
+- `produces_eggs`
+- `high_manure_value`
+
+Task outputs should be trait-derived, not purely species-switched:
+
+- transport capacity depends on strength, stamina, health, training
+- traction power depends on strength, stamina, temperament, harness training
+- hunting support depends on speed, obedience, handler bond
+- guard utility depends on alertness and aggression balance
+- product outputs (milk/egg/fiber/meat/manure) depend on species template + nutrition + disease burden
+
+This allows fast implementation now and scientifically defensible extension later.
+
 ### 6.3 Soil and nutrient variables
 
 At minimum, POLIS should represent:

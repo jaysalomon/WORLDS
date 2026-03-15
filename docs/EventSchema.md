@@ -404,6 +404,48 @@ pub struct DomesticationShift {
 }
 ```
 
+#### `BattleResolved` (Planned)
+
+```rust
+pub struct BattleResolved {
+    pub tick: u64,
+    pub partition_id: u64,
+    pub attacker_id: u64,
+    pub defender_id: u64,
+    pub attacker_power: u32,
+    pub defender_power: u32,
+    pub attacker_win_probability: u8, // 0-100
+    pub attacker_won: bool,
+    pub attacker_losses: u32,
+    pub defender_losses: u32,
+}
+```
+
+#### `TerritoryControlChanged` (Planned)
+
+```rust
+pub struct TerritoryControlChanged {
+    pub tick: u64,
+    pub partition_id: u64,
+    pub old_controller: Option<u64>,
+    pub new_controller: Option<u64>,
+    pub old_state: String, // Claimed/Contested/Controlled/Occupied
+    pub new_state: String,
+}
+```
+
+#### `OccupationStabilized` (Planned)
+
+```rust
+pub struct OccupationStabilized {
+    pub tick: u64,
+    pub partition_id: u64,
+    pub occupier_id: u64,
+    pub control_score: u32,
+    pub resistance_score: u32,
+}
+```
+
 ## 3. Event Stream Properties
 
 ### 3.1 Event Count Formula
@@ -676,10 +718,30 @@ Event schema version is embedded in export metadata:
 | 0.1.0 | 2026-03-14 | Initial schema - TickStarted, PhaseApplied, TickCompleted |
 | 0.2.0 | 2026-03-14 | Added Phase 4 social fabric events (TrustShifted, CooperationOccurred, ConflictOccurred, HumanAnimalContact) |
 | 0.3.0 | 2026-03-14 | Added Phase 5 collective events (CollectiveLifecycleTransition, CollectiveMerged, CollectiveSplit) |
-| 0.4.0 | TBD | Added AgentSpawned, AgentDied, ResourceDiscovered |
-| 0.5.0 | TBD | Added TradeOccurred, ConflictStarted |
-| 0.6.0 | TBD | Added TechnologyDiscovered, SettlementFounded |
-| 0.7.0 | TBD | Add biology interaction events (PredationEncountered, DomesticationShift) |
+| 0.4.0 | 2026-03-15 | Added Phase 6 event set (DiscoveryStageTransition, CorpseCreated, CorpseDecomposed, AnimalCapabilityUtilized, SecondaryProductProduced, ZoonoticPressureChange) |
+| 0.5.0 | 2026-03-15 | Added Phase 6 Pass 2 inference events (RiskUpdated, IncidentRealized) |
+| 0.6.0 | TBD | Added AgentSpawned, AgentDied, ResourceDiscovered |
+| 0.7.0 | TBD | Added TradeOccurred, ConflictStarted |
+| 0.8.0 | TBD | Added TechnologyDiscovered, SettlementFounded |
+| 0.9.0 | TBD | Additional biology interaction events (PredationEncountered, DomesticationShift) |
+
+## 8.4 Phase 6 Additions (Current Runtime)
+
+The runtime `SimEvent` enum now includes the following additional variants beyond Phase 5:
+
+- `DiscoveryStageTransition`
+- `CorpseCreated`
+- `CorpseDecomposed`
+- `AnimalCapabilityUtilized`
+- `SecondaryProductProduced`
+- `ZoonoticPressureChange`
+- `RiskUpdated`
+- `IncidentRealized`
+
+Notes:
+- `CorpseCreated` and `CorpseDecomposed` are actively emitted.
+- `RiskUpdated` and `IncidentRealized` are actively emitted on inference cadence.
+- `DiscoveryStageTransition`, `AnimalCapabilityUtilized`, `SecondaryProductProduced`, and `ZoonoticPressureChange` remain schema-defined and are pending full emission wiring.
 
 ## 9. References
 

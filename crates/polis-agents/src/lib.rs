@@ -12,7 +12,10 @@
 use polis_core::DeterministicRng;
 use serde::{Deserialize, Serialize};
 
+pub mod animals;
 pub mod collective;
+pub mod inference;
+pub mod knowledge;
 pub mod social;
 
 pub struct AgentsModule;
@@ -217,6 +220,50 @@ impl Individual {
     }
 }
 
+/// A corpse from a dead agent, persists for waste/disease systems
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Corpse {
+    pub agent_id: AgentId,
+    pub partition_id: u64,
+    pub tick_created: u64,
+    /// Biomass available for decomposition
+    pub biomass: u32,
+    /// Disease risk from the corpse
+    pub disease_risk: u8,
+    /// Whether corpse has been scavenged/processed
+    pub is_processed: bool,
+}
+
+impl Corpse {
+    pub fn new(agent_id: AgentId, partition_id: u64, tick: u64, health_at_death: u8) -> Self {
+        Self {
+            agent_id,
+            partition_id,
+            tick_created: tick,
+            biomass: (health_at_death as u32 * 10).max(100),
+            disease_risk: 20, // Base disease risk
+            is_processed: false,
+        }
+    }
+
+    /// Calculate waste produced as corpse decomposes
+    pub fn decomposition_waste(&self, current_tick: u64) -> u32 {
+        let age = current_tick.saturating_sub(self.tick_created);
+        if age > 100 {
+            // Decomposition slows over time
+            self.biomass.saturating_sub((age / 10) as u32).max(10)
+        } else {
+            self.biomass
+        }
+    }
+
+    /// Check if corpse should be removed (fully decomposed)
+    pub fn is_fully_decomposed(&self, current_tick: u64) -> bool {
+        let age = current_tick.saturating_sub(self.tick_created);
+        age > 500 // Corpses last ~500 ticks
+    }
+}
+
 /// Collection of all agents in the simulation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPopulation {
@@ -226,6 +273,12 @@ pub struct AgentPopulation {
     pub social_network: social::SocialNetwork,
     /// Collective actors registry for Phase 5
     pub collective_registry: collective::CollectiveRegistry,
+    /// Animal population for Phase 6
+    pub animal_population: animals::AnimalPopulation,
+    /// Corpses for waste/disease coupling (Phase 6 carry-forward)
+    pub corpses: Vec<Corpse>,
+    /// Inference engine for Phase 6 Pass 2 risk assessment
+    pub inference_engine: inference::InferenceEngine,
 }
 
 impl AgentPopulation {
@@ -235,6 +288,9 @@ impl AgentPopulation {
             agents: Vec::new(),
             social_network: social::SocialNetwork::new(),
             collective_registry: collective::CollectiveRegistry::new(),
+            animal_population: animals::AnimalPopulation::new(),
+            corpses: Vec::new(),
+            inference_engine: inference::InferenceEngine::new(100, 2_000), // run every 100 ticks with 2k tick retention
         }
     }
 
@@ -302,7 +358,71 @@ impl AgentPopulation {
         agent
     }
 
-    /// Remove dead agents (cleanup)
+    /// Process dead agents into corpses (Phase 6 carry-forward)
+    /// Returns created corpse records so callers can emit per-corpse events.
+    pub fn process_dead_into_corpses(&mut self, current_tick: u64) -> Vec<Corpse> {
+        let mut new_corpses = Vec::new();
+        let mut dead_indices = Vec::new();
+
+        for (idx, agent) in self.agents.iter().enumerate() {
+            if !agent.is_alive {
+                dead_indices.push(idx);
+                let corpse = Corpse::new(
+                    agent.id,
+                    agent.partition_id,
+                    current_tick,
+                    agent.health, // Health at death (0, but we track it)
+                );
+                new_corpses.push(corpse);
+            }
+        }
+
+        // Remove dead agents from population
+        // Process in reverse order to maintain indices
+        dead_indices.reverse();
+        for idx in dead_indices {
+            self.agents.remove(idx);
+        }
+
+        self.corpses.extend(new_corpses.iter().cloned());
+        new_corpses
+    }
+
+    /// Get corpses in a partition
+    pub fn corpses_in_partition(&self, partition_id: u64) -> impl Iterator<Item = &Corpse> {
+        self.corpses.iter().filter(move |c| c.partition_id == partition_id)
+    }
+
+    /// Calculate total waste from corpses in partition
+    pub fn corpse_waste_in_partition(&self, partition_id: u64, current_tick: u64) -> u32 {
+        self.corpses_in_partition(partition_id)
+            .map(|c| c.decomposition_waste(current_tick))
+            .sum()
+    }
+
+    /// Calculate disease pressure from corpses in partition
+    pub fn corpse_disease_pressure(&self, partition_id: u64) -> u32 {
+        self.corpses_in_partition(partition_id)
+            .filter(|c| !c.is_processed)
+            .map(|c| c.disease_risk as u32)
+            .sum()
+    }
+
+    /// Cleanup fully decomposed corpses.
+    /// Returns removed corpse records so callers can emit per-corpse events.
+    pub fn cleanup_decomposed_corpses(&mut self, current_tick: u64) -> Vec<Corpse> {
+        let mut removed = Vec::new();
+        self.corpses.retain(|c| {
+            let decomposed = c.is_fully_decomposed(current_tick);
+            if decomposed {
+                removed.push(c.clone());
+            }
+            !decomposed
+        });
+        removed
+    }
+
+    /// Legacy: Remove dead agents immediately (not recommended for Phase 6+)
     pub fn cleanup_dead(&mut self) {
         self.agents.retain(|a| a.is_alive);
     }
@@ -362,6 +482,20 @@ impl AgentPopulation {
         h = mix64(h ^ (coll_stats.average_legitimacy as u64).rotate_left(43));
         h = mix64(h ^ (coll_stats.average_factionalism as u64).rotate_left(47));
 
+        // Include animal population in digest
+        let animal_stats = self.animal_population.statistics();
+        h = mix64(h ^ animal_stats.total_animals.rotate_left(51));
+        h = mix64(h ^ (animal_stats.average_health as u64).rotate_left(55));
+        h = mix64(h ^ (animal_stats.average_nutrition as u64).rotate_left(59));
+
+        // Include corpses in digest
+        h = mix64(h ^ (self.corpses.len() as u64).rotate_left(63));
+        for corpse in &self.corpses {
+            h = mix64(h ^ corpse.agent_id.0);
+            h = mix64(h ^ corpse.partition_id.rotate_left(3));
+            h = mix64(h ^ (corpse.biomass as u64).rotate_left(7));
+        }
+
         h
     }
 
@@ -370,9 +504,19 @@ impl AgentPopulation {
         self.social_network.statistics()
     }
 
+    /// Get animal population statistics
+    pub fn animal_statistics(&self) -> animals::AnimalPopulationStatistics {
+        self.animal_population.statistics()
+    }
+
     /// Get collective registry statistics
     pub fn collective_statistics(&self) -> collective::CollectiveStatistics {
         self.collective_registry.statistics()
+    }
+
+    /// Get corpse count
+    pub fn corpse_count(&self) -> usize {
+        self.corpses.len()
     }
 }
 
@@ -564,5 +708,89 @@ mod tests {
 
         // High needs should trigger movement more than low needs
         assert!(!wants_move_low_needs || wants_move_high_needs);
+    }
+
+    #[test]
+    fn corpse_lifecycle_creates_corpses() {
+        let mut population = AgentPopulation::new();
+        population.initialize(10, 1, 42);
+
+        // Kill some agents
+        for agent in population.agents_mut().iter_mut().take(5) {
+            agent.is_alive = false;
+        }
+
+        assert_eq!(population.living_count(), 5);
+        assert_eq!(population.corpse_count(), 0);
+
+        // Process dead into corpses
+        let corpses_created = population.process_dead_into_corpses(100);
+
+        assert_eq!(corpses_created.len(), 5);
+        assert_eq!(population.living_count(), 5);
+        assert_eq!(population.corpse_count(), 5);
+    }
+
+    #[test]
+    fn corpse_produces_waste() {
+        let mut population = AgentPopulation::new();
+        population.initialize(5, 1, 42);
+
+        // Kill an agent
+        population.agents_mut()[0].is_alive = false;
+
+        // Process dead
+        population.process_dead_into_corpses(100);
+
+        // Check waste at different ticks
+        let waste_early = population.corpse_waste_in_partition(0, 100);
+        let waste_later = population.corpse_waste_in_partition(0, 200);
+
+        // Waste should decrease as corpse decomposes
+        assert!(waste_later <= waste_early);
+    }
+
+    #[test]
+    fn corpse_disease_pressure_tracked() {
+        let mut population = AgentPopulation::new();
+        population.initialize(5, 1, 42);
+
+        // Kill an agent
+        population.agents_mut()[0].is_alive = false;
+
+        // Process dead
+        population.process_dead_into_corpses(100);
+
+        // Check disease pressure
+        let disease = population.corpse_disease_pressure(0);
+        assert!(disease > 0);
+    }
+
+    #[test]
+    fn corpses_decompose_over_time() {
+        let mut population = AgentPopulation::new();
+        population.initialize(5, 1, 42);
+
+        // Kill an agent
+        population.agents_mut()[0].is_alive = false;
+        population.process_dead_into_corpses(100);
+
+        // Cleanup at tick 601 (should remove, as decomposition takes >500 ticks)
+        let removed = population.cleanup_decomposed_corpses(601);
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(population.corpse_count(), 0);
+    }
+
+    #[test]
+    fn animal_population_tracked() {
+        let mut population = AgentPopulation::new();
+
+        // Spawn some animals
+        population.animal_population.spawn(animals::SpeciesId(1), 0); // Horse
+        population.animal_population.spawn(animals::SpeciesId(7), 0); // Poultry
+
+        assert_eq!(population.animal_population.living_count(), 2);
+        assert_eq!(population.animal_statistics().total_animals, 2);
     }
 }

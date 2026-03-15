@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use polis_agents::AgentPopulation;
-use polis_core::{RunManifest, SimulationSeed, workspace_status};
+use polis_core::{DeterministicRng, RunManifest, SimulationSeed, workspace_status};
 use polis_systems::{apply_phase_to_partition, registered_phases};
 use polis_world::{DEFAULT_PARTITION_COUNT, WorldState};
 use rayon::prelude::*;
@@ -65,9 +65,25 @@ pub struct TickMetrics {
     pub average_collective_size: u64,
     pub average_collective_legitimacy: u64,
     pub average_collective_factionalism: u64,
+    // Phase 6: Discovery metrics
+    pub discoveries_this_tick: u64,
+    pub total_knowledge_items: u64,
+    pub average_discovery_stage: u64,
+    // Phase 6: Animal metrics
+    pub total_domestic_animals: u64,
+    pub transport_capacity: u64,
+    pub traction_capacity: u64,
+    // Phase 6: Secondary product metrics
+    pub milk_produced: u64,
+    pub eggs_produced: u64,
+    pub wool_produced: u64,
+    pub manure_produced: u64,
+    // Phase 6: Disease metrics
+    pub zoonotic_pressure: u64,
+    pub corpse_count: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SimEvent {
     TickStarted {
         tick: u64,
@@ -127,6 +143,68 @@ pub enum SimEvent {
         original_id: u64,
         new_id: u64,
     },
+    // Phase 6: Discovery events
+    DiscoveryStageTransition {
+        tick: u64,
+        agent_id: u64,
+        knowledge_id: u64,
+        old_stage: DiscoveryStage,
+        new_stage: DiscoveryStage,
+        method: DiscoveryMethod,
+    },
+    // Phase 6: Corpse lifecycle events
+    CorpseCreated {
+        tick: u64,
+        agent_id: u64,
+        partition_id: u64,
+        biomass: u32,
+    },
+    CorpseDecomposed {
+        tick: u64,
+        agent_id: u64,
+        partition_id: u64,
+        waste_produced: u32,
+    },
+    // Phase 6: Animal capability utilization
+    AnimalCapabilityUtilized {
+        tick: u64,
+        animal_id: u64,
+        species_id: u64,
+        partition_id: u64,
+        capability: AnimalCapability,
+        effectiveness: u8, // 0-100
+    },
+    // Phase 6: Secondary product outputs
+    SecondaryProductProduced {
+        tick: u64,
+        partition_id: u64,
+        product_type: SecondaryProductType,
+        amount: u32, // Changed from f32 to u32 for Eq
+    },
+    // Phase 6: Zoonotic disease events
+    ZoonoticPressureChange {
+        tick: u64,
+        partition_id: u64,
+        livestock_density: u32,
+        disease_pressure: u32,
+        spillover_risk: u8, // 0-100
+    },
+    // Phase 6 Pass 2: Inference events
+    RiskUpdated {
+        tick: u64,
+        partition_id: u64,
+        risk_type: RiskType,
+        strength: f32,
+        confidence: f32,
+        top_factors: Vec<(String, f32)>,
+    },
+    IncidentRealized {
+        tick: u64,
+        partition_id: u64,
+        risk_type: RiskType,
+        severity: u8, // 0-100
+        contributing_factors: Vec<String>,
+    },
 }
 
 /// Reason for trust shift
@@ -169,6 +247,64 @@ pub enum HumanAnimalOutcome {
     Negative,
     Neutral,
 }
+
+/// Discovery lifecycle stages (from 05_DiscoveryHeuristics.md)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DiscoveryStage {
+    AccidentalObservation,
+    AffordanceCandidate,
+    ProcessSchema,
+    Technique,
+    CodifiedKnowledge,
+    InstitutionalizedPractice,
+}
+
+impl DiscoveryStage {
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            DiscoveryStage::AccidentalObservation => 1,
+            DiscoveryStage::AffordanceCandidate => 2,
+            DiscoveryStage::ProcessSchema => 3,
+            DiscoveryStage::Technique => 4,
+            DiscoveryStage::CodifiedKnowledge => 5,
+            DiscoveryStage::InstitutionalizedPractice => 6,
+        }
+    }
+}
+
+/// Discovery methods
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DiscoveryMethod {
+    Repetition,
+    Search,
+    Accident,
+    SocialTransmission,
+}
+
+/// Animal capabilities that can be utilized
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AnimalCapability {
+    Transport,
+    Traction,
+    HuntingSupport,
+    Guarding,
+    Herding,
+    MilkProduction,
+    EggProduction,
+    FiberProduction,
+}
+
+/// Types of secondary products from animals
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SecondaryProductType {
+    Milk,
+    Eggs,
+    Wool,
+    Manure,
+}
+
+// RiskType is re-exported from polis_agents::inference
+pub use polis_agents::inference::RiskType;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunSummary {
@@ -560,6 +696,34 @@ impl Simulation {
         );
         self.agents.collective_registry = collective_registry;
 
+        // Phase 6: Corpse lifecycle - process dead agents into corpses
+        let new_corpses = self.agents.process_dead_into_corpses(self.state.tick);
+        for corpse in &new_corpses {
+            self.events.push(SimEvent::CorpseCreated {
+                tick: self.state.tick,
+                agent_id: corpse.agent_id.0,
+                partition_id: corpse.partition_id,
+                biomass: corpse.biomass,
+            });
+        }
+
+        // Phase 6: Cleanup decomposed corpses
+        let removed_corpses = self.agents.cleanup_decomposed_corpses(self.state.tick);
+        for corpse in &removed_corpses {
+            self.events.push(SimEvent::CorpseDecomposed {
+                tick: self.state.tick,
+                agent_id: corpse.agent_id.0,
+                partition_id: corpse.partition_id,
+                waste_produced: corpse.decomposition_waste(self.state.tick),
+            });
+        }
+
+        // Phase 6: Update animal populations and generate secondary products
+        self.agents.animal_population.update_all();
+
+        // Phase 6: Cleanup dead animals
+        self.agents.animal_population.cleanup_dead();
+
         // Convert and add collective events
         for event in collective_events {
             let sim_event = match event {
@@ -595,6 +759,11 @@ impl Simulation {
             self.events.push(sim_event);
         }
 
+        // Phase 6 Pass 2: Probabilistic inference layer (slower cadence)
+        if self.agents.inference_engine.should_run(self.state.tick) {
+            self.run_inference_phase();
+        }
+
         self.state.state_hash = step_hash(
             self.seed.0,
             self.state.tick,
@@ -605,7 +774,7 @@ impl Simulation {
             state_hash: self.state.state_hash,
         });
         self.metrics
-            .push(compute_tick_metrics(&self.world, &self.agents));
+            .push(compute_tick_metrics(&self.world, &self.agents, &self.events));
     }
 
     pub fn run_for(&mut self, ticks: u64) -> RunSummary {
@@ -625,6 +794,561 @@ impl Simulation {
             event_count: self.events.len() as u64,
             metric_count: self.metrics.len() as u64,
         }
+    }
+
+    /// Phase 6 Pass 2: Run probabilistic inference for risk assessment
+    fn run_inference_phase(&mut self) {
+        use polis_core::DeterministicRng;
+
+        let mut rng = DeterministicRng::from_u64(self.seed.0.wrapping_add(self.state.tick));
+        let partition_count = self.world.partition_count();
+
+        // Run all risk inference types for each partition
+        for partition_id in 0..partition_count {
+            // 1. Zoonotic spillover risk
+            self.run_zoonotic_risk_inference(partition_id, &mut rng);
+
+            // 2. Trade cheating/default risk
+            self.run_trade_cheating_risk_inference(partition_id, &mut rng);
+
+            // 3. Institution enforcement-failure risk
+            self.run_enforcement_failure_risk_inference(partition_id, &mut rng);
+
+            // 4. Collective fracture/escalation risk
+            self.run_collective_fracture_risk_inference(partition_id, &mut rng);
+
+            // 5. Famine/crisis early-warning risk
+            self.run_famine_crisis_risk_inference(partition_id, &mut rng);
+        }
+
+        // Clear old beliefs (older than 500 ticks) to prevent unbounded growth
+        self.agents.inference_engine.clear_expired_beliefs(self.state.tick);
+
+        // Update last inference tick
+        self.agents.inference_engine.last_inference_tick = self.state.tick;
+    }
+
+    /// Run zoonotic spillover risk inference for a partition
+    fn run_zoonotic_risk_inference(
+        &mut self,
+        partition_id: u64,
+        rng: &mut DeterministicRng,
+    ) {
+        use polis_agents::inference::RiskType;
+
+        let livestock_density = self.calculate_livestock_density(partition_id);
+        let corpse_load = self.calculate_corpse_load(partition_id);
+        let sanitation_level = self.calculate_sanitation_level(partition_id);
+
+        let assessment = self.agents.inference_engine.infer_zoonotic_risk(
+            partition_id,
+            livestock_density,
+            corpse_load,
+            sanitation_level,
+            self.state.tick,
+            rng,
+        );
+
+        let factors: Vec<(String, f32)> = assessment
+            .top_factors
+            .iter()
+            .map(|(_, name, weight)| (name.clone(), *weight))
+            .collect();
+
+        self.events.push(SimEvent::RiskUpdated {
+            tick: self.state.tick,
+            partition_id: assessment.partition_id,
+            risk_type: RiskType::ZoonoticSpillover,
+            strength: assessment.truth_value.strength,
+            confidence: assessment.truth_value.confidence,
+            top_factors: factors.clone(),
+        });
+
+        // Check for incident realization
+        if assessment.truth_value.is_likely(0.7) {
+            let realization_threshold = 0.8;
+            if assessment.truth_value.strength > realization_threshold {
+                self.events.push(SimEvent::IncidentRealized {
+                    tick: self.state.tick,
+                    partition_id: assessment.partition_id,
+                    risk_type: RiskType::ZoonoticSpillover,
+                    severity: ((assessment.truth_value.strength - 0.7) * 333.0) as u8,
+                    contributing_factors: factors.iter().map(|(n, _)| n.clone()).collect(),
+                });
+            }
+        }
+    }
+
+    /// Run trade cheating/default risk inference for a partition
+    fn run_trade_cheating_risk_inference(
+        &mut self,
+        partition_id: u64,
+        rng: &mut DeterministicRng,
+    ) {
+        use polis_agents::inference::RiskType;
+
+        let scarcity_stress = self.calculate_scarcity_stress(partition_id);
+        let trust_level = self.calculate_trust_level(partition_id);
+        let enforcement_coverage = self.calculate_enforcement_coverage(partition_id);
+
+        let assessment = self.agents.inference_engine.infer_trade_cheating_risk(
+            partition_id,
+            scarcity_stress,
+            trust_level,
+            enforcement_coverage,
+            self.state.tick,
+            rng,
+        );
+
+        let factors: Vec<(String, f32)> = assessment
+            .top_factors
+            .iter()
+            .map(|(_, name, weight)| (name.clone(), *weight))
+            .collect();
+
+        self.events.push(SimEvent::RiskUpdated {
+            tick: self.state.tick,
+            partition_id: assessment.partition_id,
+            risk_type: RiskType::TradeCheating,
+            strength: assessment.truth_value.strength,
+            confidence: assessment.truth_value.confidence,
+            top_factors: factors.clone(),
+        });
+
+        if assessment.truth_value.is_likely(0.7) {
+            let realization_threshold = 0.8;
+            if assessment.truth_value.strength > realization_threshold {
+                self.events.push(SimEvent::IncidentRealized {
+                    tick: self.state.tick,
+                    partition_id: assessment.partition_id,
+                    risk_type: RiskType::TradeCheating,
+                    severity: ((assessment.truth_value.strength - 0.7) * 333.0) as u8,
+                    contributing_factors: factors.iter().map(|(n, _)| n.clone()).collect(),
+                });
+            }
+        }
+    }
+
+    /// Run enforcement-failure risk inference for a partition
+    fn run_enforcement_failure_risk_inference(
+        &mut self,
+        partition_id: u64,
+        rng: &mut DeterministicRng,
+    ) {
+        use polis_agents::inference::RiskType;
+
+        let factionalism = self.calculate_factionalism(partition_id);
+        let legitimacy = self.calculate_legitimacy(partition_id);
+        let resource_strain = self.calculate_resource_strain(partition_id);
+
+        let assessment = self.agents.inference_engine.infer_enforcement_failure_risk(
+            partition_id,
+            factionalism,
+            legitimacy,
+            resource_strain,
+            self.state.tick,
+            rng,
+        );
+
+        let factors: Vec<(String, f32)> = assessment
+            .top_factors
+            .iter()
+            .map(|(_, name, weight)| (name.clone(), *weight))
+            .collect();
+
+        self.events.push(SimEvent::RiskUpdated {
+            tick: self.state.tick,
+            partition_id: assessment.partition_id,
+            risk_type: RiskType::EnforcementFailure,
+            strength: assessment.truth_value.strength,
+            confidence: assessment.truth_value.confidence,
+            top_factors: factors.clone(),
+        });
+
+        if assessment.truth_value.is_likely(0.7) {
+            let realization_threshold = 0.8;
+            if assessment.truth_value.strength > realization_threshold {
+                self.events.push(SimEvent::IncidentRealized {
+                    tick: self.state.tick,
+                    partition_id: assessment.partition_id,
+                    risk_type: RiskType::EnforcementFailure,
+                    severity: ((assessment.truth_value.strength - 0.7) * 333.0) as u8,
+                    contributing_factors: factors.iter().map(|(n, _)| n.clone()).collect(),
+                });
+            }
+        }
+    }
+
+    /// Run collective fracture risk inference for a partition
+    fn run_collective_fracture_risk_inference(
+        &mut self,
+        partition_id: u64,
+        rng: &mut DeterministicRng,
+    ) {
+        use polis_agents::inference::RiskType;
+
+        let grievance_level = self.calculate_grievance_level(partition_id);
+        let social_tension = self.calculate_social_tension(partition_id);
+        let cooperation_rate = self.calculate_cooperation_rate(partition_id);
+
+        let assessment = self.agents.inference_engine.infer_collective_fracture_risk(
+            partition_id,
+            grievance_level,
+            social_tension,
+            cooperation_rate,
+            self.state.tick,
+            rng,
+        );
+
+        let factors: Vec<(String, f32)> = assessment
+            .top_factors
+            .iter()
+            .map(|(_, name, weight)| (name.clone(), *weight))
+            .collect();
+
+        self.events.push(SimEvent::RiskUpdated {
+            tick: self.state.tick,
+            partition_id: assessment.partition_id,
+            risk_type: RiskType::CollectiveFracture,
+            strength: assessment.truth_value.strength,
+            confidence: assessment.truth_value.confidence,
+            top_factors: factors.clone(),
+        });
+
+        if assessment.truth_value.is_likely(0.7) {
+            let realization_threshold = 0.8;
+            if assessment.truth_value.strength > realization_threshold {
+                self.events.push(SimEvent::IncidentRealized {
+                    tick: self.state.tick,
+                    partition_id: assessment.partition_id,
+                    risk_type: RiskType::CollectiveFracture,
+                    severity: ((assessment.truth_value.strength - 0.7) * 333.0) as u8,
+                    contributing_factors: factors.iter().map(|(n, _)| n.clone()).collect(),
+                });
+            }
+        }
+    }
+
+    /// Run famine/crisis risk inference for a partition
+    fn run_famine_crisis_risk_inference(
+        &mut self,
+        partition_id: u64,
+        rng: &mut DeterministicRng,
+    ) {
+        use polis_agents::inference::RiskType;
+
+        let food_scarcity = self.calculate_food_scarcity(partition_id);
+        let health_decline = self.calculate_health_decline(partition_id);
+        let disease_pressure = self.calculate_disease_pressure(partition_id);
+
+        let assessment = self.agents.inference_engine.infer_famine_crisis_risk(
+            partition_id,
+            food_scarcity,
+            health_decline,
+            disease_pressure,
+            self.state.tick,
+            rng,
+        );
+
+        let factors: Vec<(String, f32)> = assessment
+            .top_factors
+            .iter()
+            .map(|(_, name, weight)| (name.clone(), *weight))
+            .collect();
+
+        self.events.push(SimEvent::RiskUpdated {
+            tick: self.state.tick,
+            partition_id: assessment.partition_id,
+            risk_type: RiskType::FamineCrisis,
+            strength: assessment.truth_value.strength,
+            confidence: assessment.truth_value.confidence,
+            top_factors: factors.clone(),
+        });
+
+        if assessment.truth_value.is_likely(0.7) {
+            let realization_threshold = 0.8;
+            if assessment.truth_value.strength > realization_threshold {
+                self.events.push(SimEvent::IncidentRealized {
+                    tick: self.state.tick,
+                    partition_id: assessment.partition_id,
+                    risk_type: RiskType::FamineCrisis,
+                    severity: ((assessment.truth_value.strength - 0.7) * 333.0) as u8,
+                    contributing_factors: factors.iter().map(|(n, _)| n.clone()).collect(),
+                });
+            }
+        }
+    }
+
+    /// Calculate livestock density for a partition (0.0 to 1.0)
+    fn calculate_livestock_density(&self, partition_id: u64) -> f32 {
+        let domestic_count = self
+            .agents
+            .animal_population
+            .animals_in_partition(partition_id)
+            .filter(|a| a.is_alive && a.is_domesticated)
+            .count() as f32;
+        // Normalize: assume 10+ animals is high density
+        (domestic_count / 10.0).min(1.0)
+    }
+
+    /// Calculate corpse load for a partition (0.0 to 1.0)
+    fn calculate_corpse_load(&self, partition_id: u64) -> f32 {
+        let corpse_count = self
+            .agents
+            .corpses_in_partition(partition_id)
+            .count() as f32;
+        // Normalize: assume 5+ corpses is high load
+        (corpse_count / 5.0).min(1.0)
+    }
+
+    /// Calculate sanitation level for a partition (0.0 to 1.0)
+    fn calculate_sanitation_level(&self, partition_id: u64) -> f32 {
+        // Simplified: based on waste level in partition
+        if let Some(partition) = self.world.partitions().get(partition_id as usize) {
+            let waste_ratio = partition.waste.quantity as f32
+                / (partition.total_resources() as f32 + 1.0);
+            // Higher waste = lower sanitation
+            (1.0 - waste_ratio).max(0.0)
+        } else {
+            0.5 // Default medium sanitation
+        }
+    }
+
+    /// Calculate scarcity stress for trade cheating risk (0.0 to 1.0)
+    fn calculate_scarcity_stress(&self, partition_id: u64) -> f32 {
+        // Based on food availability vs population needs
+        if let Some(partition) = self.world.partitions().get(partition_id as usize) {
+            let agent_count = self.agents.living_in_partition(partition_id) as f32;
+            let food_available = partition.food.quantity as f32;
+            // Normalize: less than 10 food per agent is stressful
+            let stress = 1.0 - (food_available / (agent_count * 10.0 + 1.0)).min(1.0);
+            stress.max(0.0).min(1.0)
+        } else {
+            0.5
+        }
+    }
+
+    /// Calculate trust level for trade cheating risk (-1.0 to 1.0)
+    fn calculate_trust_level(&self, partition_id: u64) -> f32 {
+        // Average trust from social network in this partition
+        let agents_in_partition: Vec<_> = self.agents
+            .agents_in_partition(partition_id)
+            .map(|a| a.id)
+            .collect();
+
+        if agents_in_partition.is_empty() {
+            return 0.0;
+        }
+
+        let mut total_trust = 0_i64;
+        let mut count = 0_u64;
+        for agent_id in &agents_in_partition {
+            let mut ties = self.agents.social_network.get_agent_ties(*agent_id);
+            ties.sort_unstable_by_key(|(other, _)| other.0);
+            for (_, tie) in ties {
+                total_trust += tie.trust as i64;
+                count += 1;
+            }
+        }
+
+        if count == 0_u64 {
+            0.0
+        } else {
+            ((total_trust as f32) / (count as f32) / 100.0).clamp(-1.0, 1.0)
+        }
+    }
+
+    /// Calculate enforcement coverage for trade cheating risk (0.0 to 1.0)
+    fn calculate_enforcement_coverage(&self, _partition_id: u64) -> f32 {
+        // Based on presence of collectives with enforcement capability
+        let active_collectives = self.agents.collective_registry.active_collectives();
+
+        if active_collectives.is_empty() {
+            return 0.2; // Low baseline enforcement
+        }
+
+        let total_legitimacy: f32 = active_collectives
+            .iter()
+            .map(|c| c.legitimacy as f32 / 100.0)
+            .sum::<f32>();
+
+        (total_legitimacy / active_collectives.len() as f32).min(1.0)
+    }
+
+    /// Calculate factionalism for enforcement-failure risk (0.0 to 1.0)
+    fn calculate_factionalism(&self, _partition_id: u64) -> f32 {
+        let active_collectives = self.agents.collective_registry.active_collectives();
+
+        if active_collectives.is_empty() {
+            return 0.0;
+        }
+
+        let avg_factionalism: f32 = active_collectives
+            .iter()
+            .map(|c| c.factionalism as f32 / 100.0)
+            .sum::<f32>()
+            / active_collectives.len() as f32;
+
+        avg_factionalism.min(1.0)
+    }
+
+    /// Calculate legitimacy for enforcement-failure risk (0.0 to 1.0)
+    fn calculate_legitimacy(&self, _partition_id: u64) -> f32 {
+        let active_collectives = self.agents.collective_registry.active_collectives();
+
+        if active_collectives.is_empty() {
+            return 0.5; // Neutral baseline
+        }
+
+        let avg_legitimacy: f32 = active_collectives
+            .iter()
+            .map(|c| c.legitimacy as f32 / 100.0)
+            .sum::<f32>()
+            / active_collectives.len() as f32;
+
+        avg_legitimacy.min(1.0)
+    }
+
+    /// Calculate resource strain for enforcement-failure risk (0.0 to 1.0)
+    fn calculate_resource_strain(&self, _partition_id: u64) -> f32 {
+        let active_collectives = self.agents.collective_registry.active_collectives();
+
+        if active_collectives.is_empty() {
+            return 0.0;
+        }
+
+        // Strain = low pooled resources relative to member count
+        let mut total_strain = 0.0;
+        for collective in &active_collectives {
+            let member_count = collective.members.len() as f32;
+            let total_resources: u64 = collective.pooled_resources.values().sum();
+            let strain = 1.0 - ((total_resources as f32) / (member_count * 10.0 + 1.0)).min(1.0);
+            total_strain += strain;
+        }
+
+        (total_strain / active_collectives.len() as f32).min(1.0)
+    }
+
+    /// Calculate grievance level for collective fracture risk (0.0 to 1.0)
+    fn calculate_grievance_level(&self, partition_id: u64) -> f32 {
+        let agents_in_partition: Vec<_> = self.agents
+            .agents_in_partition(partition_id)
+            .map(|a| a.id)
+            .collect();
+
+        if agents_in_partition.is_empty() {
+            return 0.0;
+        }
+
+        let mut total_grievance = 0_u64;
+        let mut count = 0_u64;
+        for agent_id in &agents_in_partition {
+            let mut ties = self.agents.social_network.get_agent_ties(*agent_id);
+            ties.sort_unstable_by_key(|(other, _)| other.0);
+            for (_, tie) in ties {
+                total_grievance += tie.grievance as u64;
+                count += 1;
+            }
+        }
+
+        if count == 0_u64 {
+            0.0
+        } else {
+            ((total_grievance as f32) / (count as f32) / 100.0).min(1.0)
+        }
+    }
+
+    /// Calculate social tension for collective fracture risk (0.0 to 1.0)
+    fn calculate_social_tension(&self, partition_id: u64) -> f32 {
+        // Get agents in partition and calculate tension
+        let agents_in_partition: Vec<_> = self.agents
+            .agents_in_partition(partition_id)
+            .map(|a| a.id)
+            .collect();
+
+        if agents_in_partition.is_empty() {
+            return 0.0;
+        }
+
+        let tension = self.agents.social_network.partition_tension(&agents_in_partition);
+        tension as f32 / 100.0 // Normalize to 0-1
+    }
+
+    /// Calculate cooperation rate for collective fracture risk (0.0 to 1.0)
+    fn calculate_cooperation_rate(&self, _partition_id: u64) -> f32 {
+        // Based on recent cooperation events in partition
+        let recent_events = self.state.tick.saturating_sub(100);
+        let cooperation_count = self
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(e, SimEvent::CooperationOccurred { tick, .. } if *tick >= recent_events)
+            })
+            .count() as f32;
+
+        let conflict_count = self
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(e, SimEvent::ConflictOccurred { tick, .. } if *tick >= recent_events)
+            })
+            .count() as f32;
+
+        let total = cooperation_count + conflict_count;
+        if total == 0.0 {
+            0.5 // Neutral baseline
+        } else {
+            (cooperation_count / total).min(1.0)
+        }
+    }
+
+    /// Calculate food scarcity for famine/crisis risk (0.0 to 1.0)
+    fn calculate_food_scarcity(&self, partition_id: u64) -> f32 {
+        // Inverse of food availability
+        if let Some(partition) = self.world.partitions().get(partition_id as usize) {
+            let agent_count = self.agents.living_in_partition(partition_id) as f32;
+            let food_available = partition.food.quantity as f32;
+            // Scarcity = 1 - (food / needs)
+            let scarcity = 1.0 - (food_available / (agent_count * 5.0 + 1.0)).min(1.0);
+            scarcity.max(0.0).min(1.0)
+        } else {
+            0.5
+        }
+    }
+
+    /// Calculate health decline for famine/crisis risk (0.0 to 1.0)
+    fn calculate_health_decline(&self, partition_id: u64) -> f32 {
+        let agents_in_partition: Vec<_> = self.agents
+            .agents_in_partition(partition_id)
+            .collect();
+
+        if agents_in_partition.is_empty() {
+            return 0.0;
+        }
+
+        let avg_health: f32 = agents_in_partition
+            .iter()
+            .map(|a| a.health as f32 / 100.0)
+            .sum::<f32>()
+            / agents_in_partition.len() as f32;
+
+        // Decline = inverse of health
+        (1.0 - avg_health).min(1.0)
+    }
+
+    /// Calculate disease pressure for famine/crisis risk (0.0 to 1.0)
+    fn calculate_disease_pressure(&self, partition_id: u64) -> f32 {
+        // Combine zoonotic pressure and waste levels
+        let zoonotic = self.calculate_livestock_density(partition_id) * 0.5
+            + self.calculate_corpse_load(partition_id) * 0.5;
+
+        let waste_pressure = if let Some(partition) = self.world.partitions().get(partition_id as usize) {
+            (partition.waste.quantity as f32 / 100.0).min(1.0)
+        } else {
+            0.0
+        };
+
+        (zoonotic * 0.6 + waste_pressure * 0.4).min(1.0)
     }
 }
 
@@ -715,7 +1439,98 @@ fn step_hash(seed: u64, tick: u64, current: u64) -> u64 {
     x
 }
 
-fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMetrics {
+// Phase 6: Helper functions for animal-related metrics
+
+/// Calculate total transport capacity across all partitions
+fn calculate_total_transport_capacity(agents: &AgentPopulation, partition_count: u64) -> u64 {
+    (0..partition_count)
+        .map(|p| agents.animal_population.total_transport_capacity(p) as u64)
+        .sum()
+}
+
+/// Calculate total traction capacity across all partitions
+fn calculate_total_traction_capacity(agents: &AgentPopulation, partition_count: u64) -> u64 {
+    (0..partition_count)
+        .map(|p| agents.animal_population.total_traction_power(p) as u64)
+        .sum()
+}
+
+/// Calculate milk production from all animals
+fn calculate_milk_production(agents: &AgentPopulation) -> f32 {
+    agents
+        .animal_population
+        .animals()
+        .iter()
+        .filter(|a| a.is_alive)
+        .map(|a| a.effective_milk_production())
+        .sum()
+}
+
+/// Calculate egg production from all animals
+fn calculate_egg_production(agents: &AgentPopulation) -> f32 {
+    agents
+        .animal_population
+        .animals()
+        .iter()
+        .filter(|a| a.is_alive)
+        .map(|a| a.effective_egg_production())
+        .sum()
+}
+
+/// Calculate wool/fiber production from all animals
+fn calculate_wool_production(agents: &AgentPopulation) -> f32 {
+    agents
+        .animal_population
+        .animals()
+        .iter()
+        .filter(|a| a.is_alive)
+        .map(|a| a.effective_fiber_production())
+        .sum()
+}
+
+/// Calculate manure production from all animals
+fn calculate_manure_production(agents: &AgentPopulation) -> f32 {
+    // Estimate based on feed consumption (simplified)
+    agents
+        .animal_population
+        .animals()
+        .iter()
+        .filter(|a| a.is_alive)
+        .map(|a| {
+            // Estimate feed consumed based on nutrition level
+            let feed_consumed = (100 - a.nutrition) as f32 * 0.5;
+            a.manure_output(feed_consumed)
+        })
+        .sum()
+}
+
+/// Calculate zoonotic disease pressure from livestock density
+fn calculate_zoonotic_pressure(agents: &AgentPopulation, partition_count: u64) -> u64 {
+    if partition_count == 0 {
+        return 0;
+    }
+
+    // Calculate per-partition livestock density and aggregate pressure
+    (0..partition_count)
+        .map(|partition_id| {
+            let livestock_count = agents
+                .animal_population
+                .animals_in_partition(partition_id)
+                .filter(|a| a.is_alive && a.is_domesticated)
+                .count() as u64;
+            let density_factor = livestock_count * livestock_count; // Quadratic scaling
+            let corpse_pressure = agents.corpse_disease_pressure(partition_id) as u64;
+            density_factor + corpse_pressure
+        })
+        .sum::<u64>()
+        / partition_count
+}
+
+fn compute_tick_metrics(
+    world: &WorldState,
+    agents: &AgentPopulation,
+    events: &[SimEvent],
+) -> TickMetrics {
     let partition_count = world.partition_count().max(1);
     let (
         total_resource,
@@ -778,6 +1593,46 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
     // Phase 5: Collective metrics
     let collective_stats = agents.collective_statistics();
 
+    // Phase 6: Discovery metrics derived from emitted discovery events.
+    let current_tick = world.tick();
+    let discoveries_this_tick = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                SimEvent::DiscoveryStageTransition { tick, new_stage, .. }
+                    if *tick == current_tick && *new_stage == DiscoveryStage::Technique
+            )
+        })
+        .count() as u64;
+
+    let mut discovered_pairs: std::collections::BTreeSet<(u64, u64)> =
+        std::collections::BTreeSet::new();
+    let mut cumulative_stage_sum = 0_u64;
+    let mut cumulative_stage_count = 0_u64;
+    for event in events {
+        if let SimEvent::DiscoveryStageTransition {
+            agent_id,
+            knowledge_id,
+            new_stage,
+            ..
+        } = event
+        {
+            if new_stage.as_u8() >= DiscoveryStage::Technique.as_u8() {
+                discovered_pairs.insert((*agent_id, *knowledge_id));
+            }
+            cumulative_stage_sum += new_stage.as_u8() as u64;
+            cumulative_stage_count += 1;
+        }
+    }
+
+    let total_knowledge_items = discovered_pairs.len() as u64;
+    let average_discovery_stage = if cumulative_stage_count == 0 {
+        0
+    } else {
+        cumulative_stage_sum / cumulative_stage_count
+    };
+
     TickMetrics {
         tick: world.tick(),
         total_resource,
@@ -810,6 +1665,22 @@ fn compute_tick_metrics(world: &WorldState, agents: &AgentPopulation) -> TickMet
         average_collective_size: collective_stats.average_size,
         average_collective_legitimacy: collective_stats.average_legitimacy as u64,
         average_collective_factionalism: collective_stats.average_factionalism as u64,
+        // Phase 6: Discovery metrics
+        discoveries_this_tick,
+        total_knowledge_items,
+        average_discovery_stage,
+        // Phase 6: Animal metrics (calculated from animal population)
+        total_domestic_animals: agents.animal_population.living_count() as u64,
+        transport_capacity: calculate_total_transport_capacity(agents, partition_count),
+        traction_capacity: calculate_total_traction_capacity(agents, partition_count),
+        // Phase 6: Secondary product metrics (calculated from animal population)
+        milk_produced: calculate_milk_production(agents) as u64,
+        eggs_produced: calculate_egg_production(agents) as u64,
+        wool_produced: calculate_wool_production(agents) as u64,
+        manure_produced: calculate_manure_production(agents) as u64,
+        // Phase 6: Disease metrics
+        zoonotic_pressure: calculate_zoonotic_pressure(agents, partition_count),
+        corpse_count: agents.corpse_count() as u64,
     }
 }
 
