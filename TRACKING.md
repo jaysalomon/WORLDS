@@ -367,6 +367,8 @@ Current status: **Phase 7 In Progress** - Reproducibility audit and experiment p
 - [x] CPU/GPU parity tests added for scaffolded kernels
 - [x] Integrated compute path into production substrate:
   - `polis-world::diffuse_resources` now routes through `polis-compute::ComputeEngine`
+- [x] Integrated compute path into simulation aggregation:
+  - `polis-sim::compute_tick_metrics` now routes partition-wide reductions through `polis-compute`
 
 #### In Progress
 

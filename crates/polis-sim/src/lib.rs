@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::collections::BTreeMap;
+use polis_compute::{ComputeConfig, ComputeEngine};
 
 use polis_agents::AgentPopulation;
 use polis_core::{DeterministicRng, RunManifest, SimulationSeed};
@@ -1771,40 +1772,63 @@ fn compute_tick_metrics(
     agents: &AgentPopulation,
     events: &[SimEvent],
 ) -> TickMetrics {
+    let compute = ComputeEngine::new(ComputeConfig::default());
     let partition_count = world.partition_count().max(1);
-    let (
-        total_resource,
-        total_waste,
-        total_herbivores,
-        total_predators,
-        total_proto_domestic,
-        total_tameness_ppm,
-        total_demand,
-        total_cohesion,
-        // Phase 4: Cross-species metrics
-        total_animal_familiarity,
-        total_animal_fear,
-        total_animal_tolerance,
-    ) = world.partitions().iter().fold(
-        (
-            0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64, 0_u64,
-        ),
-        |(r, w, h, p, pd, tppm, d, c, afam, afe, at), partition| {
-            (
-                r.wrapping_add(partition.total_resources().max(0) as u64),
-                w.wrapping_add(partition.waste.quantity.max(0) as u64),
-                h.wrapping_add(partition.herbivore_population),
-                p.wrapping_add(partition.predator_population),
-                pd.wrapping_add(partition.proto_domestic_population),
-                tppm.wrapping_add((partition.domestication_tameness * 1_000_000.0) as u64),
-                d.wrapping_add(partition.demand),
-                c.wrapping_add(partition.cohesion),
-                afam.wrapping_add(partition.animal_familiarity as u64),
-                afe.wrapping_add(partition.animal_fear as u64),
-                at.wrapping_add(partition.animal_human_tolerance as u64),
-            )
-        },
-    );
+    let partitions = world.partitions();
+    let total_resource = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| p.total_resources().max(0) as u64)
+            .collect::<Vec<_>>(),
+    ).0;
+    let total_waste = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| p.waste.quantity.max(0) as u64)
+            .collect::<Vec<_>>(),
+    ).0;
+    let total_herbivores = compute.reduce_sum_u64(
+        &partitions.iter().map(|p| p.herbivore_population).collect::<Vec<_>>(),
+    ).0;
+    let total_predators = compute.reduce_sum_u64(
+        &partitions.iter().map(|p| p.predator_population).collect::<Vec<_>>(),
+    ).0;
+    let total_proto_domestic = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| p.proto_domestic_population)
+            .collect::<Vec<_>>(),
+    ).0;
+    let total_tameness_ppm = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| (p.domestication_tameness * 1_000_000.0) as u64)
+            .collect::<Vec<_>>(),
+    ).0;
+    let total_demand = compute.reduce_sum_u64(
+        &partitions.iter().map(|p| p.demand).collect::<Vec<_>>(),
+    ).0;
+    let total_cohesion = compute.reduce_sum_u64(
+        &partitions.iter().map(|p| p.cohesion).collect::<Vec<_>>(),
+    ).0;
+    let total_animal_familiarity = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| p.animal_familiarity as u64)
+            .collect::<Vec<_>>(),
+    ).0;
+    let total_animal_fear = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| p.animal_fear as u64)
+            .collect::<Vec<_>>(),
+    ).0;
+    let total_animal_tolerance = compute.reduce_sum_u64(
+        &partitions
+            .iter()
+            .map(|p| p.animal_human_tolerance as u64)
+            .collect::<Vec<_>>(),
+    ).0;
 
     // Agent population metrics
     let agent_stats = agents.statistics();
@@ -1813,7 +1837,7 @@ fn compute_tick_metrics(
     let social_stats = agents.social_statistics();
 
     // Calculate social tension across partitions
-    let social_tension: u64 = world
+    let social_tension_values: Vec<u64> = world
         .partitions()
         .iter()
         .enumerate()
@@ -1828,7 +1852,8 @@ fn compute_tick_metrics(
                 .social_network
                 .partition_tension(&agents_in_partition) as u64
         })
-        .sum();
+        .collect();
+    let social_tension = compute.reduce_sum_u64(&social_tension_values).0;
 
     // Phase 5: Collective metrics
     let collective_stats = agents.collective_statistics();
