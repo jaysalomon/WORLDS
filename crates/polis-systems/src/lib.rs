@@ -778,7 +778,7 @@ fn check_potential_splits(
     collective_registry: &mut polis_agents::collective::CollectiveRegistry,
     tick: u64,
     events: &mut Vec<CollectiveEvent>,
-    rng: &mut DeterministicRng,
+    _rng: &mut DeterministicRng,
 ) {
     // Get collectives that might split
     let candidates: Vec<_> = collective_registry

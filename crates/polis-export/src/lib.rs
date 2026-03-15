@@ -510,8 +510,8 @@ impl ReproducibilityReport {
     ) -> Self {
         let original_final = original_series.last().copied().unwrap_or(0);
         let verification_final = verification_series.last().copied().unwrap_or(0);
-        let is_verified = original_final == verification_final;
 
+        // Find first divergence point
         let mut first_divergence: Option<u64> = None;
         let matching: Vec<_> = original_series
             .iter()
@@ -530,6 +530,9 @@ impl ReproducibilityReport {
         let total_ticks = ticks.min(
             original_series.len().min(verification_series.len()) as u64
         );
+
+        // For true reproducibility, series must match at all ticks (no divergence)
+        let is_verified = first_divergence.is_none();
 
         let series_comparison = Some(SeriesComparison {
             original_series: original_series.to_vec(),

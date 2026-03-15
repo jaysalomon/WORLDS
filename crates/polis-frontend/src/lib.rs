@@ -13,6 +13,17 @@ use polis_sim::{ExecutionMode, Simulation};
 use polis_world::PartitionState;
 use std::collections::HashMap;
 
+const COLOR_BG_TOP: Color = Color::new(0.07, 0.09, 0.13, 1.0);
+const COLOR_BG_BOTTOM: Color = Color::new(0.04, 0.05, 0.08, 1.0);
+const COLOR_PANEL: Color = Color::new(0.08, 0.11, 0.16, 0.92);
+const COLOR_PANEL_BORDER: Color = Color::new(0.34, 0.40, 0.52, 0.95);
+const COLOR_TEXT_PRIMARY: Color = Color::new(0.90, 0.93, 0.98, 1.0);
+const COLOR_TEXT_MUTED: Color = Color::new(0.62, 0.69, 0.80, 1.0);
+const COLOR_ACCENT: Color = Color::new(0.26, 0.74, 0.96, 1.0);
+const COLOR_OK: Color = Color::new(0.43, 0.82, 0.54, 1.0);
+const COLOR_WARN: Color = Color::new(0.98, 0.78, 0.36, 1.0);
+const COLOR_ALERT: Color = Color::new(0.91, 0.35, 0.33, 1.0);
+
 pub struct FrontendModule;
 
 impl FrontendModule {
@@ -130,7 +141,7 @@ impl PresentationShell {
 
     /// Draw the world grid
     pub fn draw(&mut self) {
-        clear_background(BLACK);
+        self.draw_background();
 
         let world = self.simulation.world();
         let partitions = world.partitions();
@@ -144,7 +155,7 @@ impl PresentationShell {
         let cols = (partition_count as f32).sqrt().ceil() as usize;
         let rows = (partition_count + cols - 1) / cols;
 
-        let margin = 20.0;
+        let margin = 28.0;
         let available_width = screen_width() - margin * 2.0;
         let available_height = screen_height() - margin * 2.0 - 100.0; // Leave room for UI
 
@@ -180,11 +191,26 @@ impl PresentationShell {
             let color = self.partition_color(partition, collective_score);
 
             // Draw cell background
-            draw_rectangle(x, y, cell_size - 2.0, cell_size - 2.0, color);
+            draw_rectangle(x, y, cell_size - 3.0, cell_size - 3.0, color);
+            draw_rectangle_lines(
+                x,
+                y,
+                cell_size - 3.0,
+                cell_size - 3.0,
+                1.2,
+                Color::new(0.09, 0.12, 0.18, 0.95),
+            );
 
             // Draw selection border
             if is_selected {
-                draw_rectangle_lines(x, y, cell_size - 2.0, cell_size - 2.0, 3.0, WHITE);
+                draw_rectangle_lines(
+                    x - 1.0,
+                    y - 1.0,
+                    cell_size - 1.0,
+                    cell_size - 1.0,
+                    3.0,
+                    COLOR_ACCENT,
+                );
             }
 
             // Draw partition ID
@@ -195,7 +221,7 @@ impl PresentationShell {
                 x + 4.0,
                 y + text_size as f32,
                 text_size as f32,
-                WHITE,
+                COLOR_TEXT_PRIMARY,
             );
 
             // Check for mouse hover/click
@@ -222,6 +248,41 @@ impl PresentationShell {
             if let Some(partition) = partitions.get(selected) {
                 self.draw_partition_details(partition, selected);
             }
+        }
+    }
+
+    fn draw_background(&self) {
+        let h = screen_height().max(1.0);
+        let w = screen_width().max(1.0);
+
+        // Vertical gradient backdrop.
+        let bands = 36;
+        for i in 0..bands {
+            let t0 = i as f32 / bands as f32;
+            let t1 = (i + 1) as f32 / bands as f32;
+            let y0 = t0 * h;
+            let band_h = (t1 - t0) * h + 1.0;
+            let color = Color::new(
+                COLOR_BG_TOP.r + (COLOR_BG_BOTTOM.r - COLOR_BG_TOP.r) * t0,
+                COLOR_BG_TOP.g + (COLOR_BG_BOTTOM.g - COLOR_BG_TOP.g) * t0,
+                COLOR_BG_TOP.b + (COLOR_BG_BOTTOM.b - COLOR_BG_TOP.b) * t0,
+                1.0,
+            );
+            draw_rectangle(0.0, y0, w, band_h, color);
+        }
+
+        // Subtle technical grid for depth.
+        let grid = 48.0;
+        let line = Color::new(0.16, 0.20, 0.28, 0.16);
+        let mut x = 0.0;
+        while x <= w {
+            draw_line(x, 0.0, x, h, 1.0, line);
+            x += grid;
+        }
+        let mut y = 0.0;
+        while y <= h {
+            draw_line(0.0, y, w, y, 1.0, line);
+            y += grid;
         }
     }
 
@@ -344,9 +405,16 @@ impl PresentationShell {
             ty,
             tooltip_width,
             tooltip_height,
-            Color::new(0.1, 0.1, 0.15, 0.95),
+            COLOR_PANEL,
         );
-        draw_rectangle_lines(tx, ty, tooltip_width, tooltip_height, 1.0, WHITE);
+        draw_rectangle_lines(
+            tx,
+            ty,
+            tooltip_width,
+            tooltip_height,
+            1.2,
+            COLOR_PANEL_BORDER,
+        );
 
         let text_size = 14.0;
         let mut line_y = ty + text_size + padding;
@@ -356,7 +424,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            WHITE,
+            COLOR_TEXT_PRIMARY,
         );
         line_y += text_size + 4.0;
 
@@ -368,7 +436,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            Color::new(0.8, 0.9, 0.8, 1.0),
+            Color::new(0.72, 0.90, 0.76, 1.0),
         );
         line_y += text_size + 4.0;
 
@@ -380,7 +448,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            Color::new(0.6, 0.8, 1.0, 1.0),
+            Color::new(0.56, 0.79, 0.98, 1.0),
         );
         line_y += text_size + 4.0;
 
@@ -389,7 +457,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            Color::new(1.0, 0.8, 0.6, 1.0),
+            COLOR_WARN,
         );
         line_y += text_size + 4.0;
 
@@ -398,7 +466,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            Color::new(0.7, 0.5, 0.4, 1.0),
+            Color::new(0.78, 0.63, 0.44, 1.0),
         );
         line_y += text_size + 4.0;
 
@@ -410,7 +478,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            Color::new(0.8, 0.9, 0.8, 1.0),
+            Color::new(0.72, 0.90, 0.76, 1.0),
         );
         line_y += text_size + 4.0;
 
@@ -423,7 +491,7 @@ impl PresentationShell {
             tx + padding,
             line_y,
             text_size,
-            Color::new(0.9, 0.7, 0.5, 1.0),
+            Color::new(0.94, 0.77, 0.54, 1.0),
         );
     }
 

@@ -578,7 +578,7 @@ impl CollectiveActor {
     /// Returns the decision outcome and compliance level
     pub fn make_decision(
         &mut self,
-        proposal: &Proposal,
+        _proposal: &Proposal,
         rng: &mut DeterministicRng,
     ) -> DecisionOutcome {
         // Collect votes weighted by influence
@@ -613,7 +613,7 @@ impl CollectiveActor {
             DecisionProcedure::Consensus => total_opposition == 0 && total_support > 0,
             DecisionProcedure::CommandHierarchy => {
                 // Leader decides
-                if let Some(leader) = self
+                if let Some(_leader) = self
                     .members
                     .values()
                     .find(|m| matches!(m.role, Role::Leader))
@@ -896,7 +896,7 @@ impl CollectiveRegistry {
 
         // Reduce original resources
         let original = self.collectives.get_mut(&original_id)?;
-        for (resource_type, amount) in &mut original.pooled_resources {
+        for (_resource_type, amount) in &mut original.pooled_resources {
             let split_amount = (*amount as f64 * split_ratio) as u64;
             *amount -= split_amount;
         }
